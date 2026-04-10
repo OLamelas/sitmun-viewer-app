@@ -1,26 +1,111 @@
 @use 'colors';
+
 @use 'dimensions';
+
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
-
+ 
 /* You can add global styles to this file, and also import other style files */
-
+ 
 body {
+
   margin: 0;
+
   font-family: system-ui;
+
   background-color: white;
-}
 
+}
+ 
 /* CDK Overlay Container - ensures Material menus and overlays appear above all content */
+
 /* This fixes z-index issues when menu is in a different DOM hierarchy than the map */
+
 .cdk-overlay-container {
-  z-index: 100000 !important; // Higher than toolbar (z-index: 99999) and map content
-}
 
+  z-index: 100000 !important; // Higher than toolbar (z-index: 99999) and map content
+
+}
+ 
 .cdk-overlay-pane {
+
   z-index: 100000 !important; // Higher than toolbar (z-index: 99999) and map content
+
+}
+ 
+/* Hide the hardcoded "API SITNA" GitHub link in attribution control */
+
+.tc-ctl-attrib .tc-github {
+
+  display: none !important;
+
+}
+ 
+/* Feature info horizontal scroll (SITNA popup + more-info tables) */
+
+.tc-ctl-popup-content .tc-ctl-finfo,
+
+.tc-ctl-popup-content .tc-ctl-finfo-result,
+
+.tc-ctl-popup-content .tc-ctl-finfo-service-content,
+
+.tc-ctl-popup-content .tc-ctl-finfo-layer-content,
+
+.tc-ctl-popup-content .tc-ctl-finfo-features,
+
+.tc-ctl-popup-content .tc-ctl-finfo-features > li {
+
+  min-width: 0;
+
+}
+ 
+.tc-ctl-popup-content .tc-ctl-finfo-layer-content,
+
+.tc-ctl-popup-content .tc-ctl-finfo-content {
+
+  overflow-x: auto !important;
+
+  max-width: 100%;
+
+  -webkit-overflow-scrolling: touch;
+
+  padding-right: 8px;
+
+}
+ 
+.tc-ctl-popup-content table.tc-attr {
+
+  width: 100%;
+
+  table-layout: auto;
+
+}
+ 
+.tc-ctl-popup-content .sitmun-more-info-placeholder {
+
+  display: block;
+
+  max-width: 100%;
+
+  overflow-x: auto;
+
+  -webkit-overflow-scrolling: touch;
+
+}
+ 
+.tc-ctl-popup-content .sitmun-more-info-placeholder .sitmun-json-table {
+
+  width: max-content;
+
+  min-width: 100%;
+
+}
+ 
+.tc-ctl-popup-content .sitmun-more-info-placeholder .sitmun-json-table th,
+
+.tc-ctl-popup-content .sitmun-more-info-placeholder .sitmun-json-table td {
+
+  white-space: nowrap;
+
 }
 
-/* Hide the hardcoded "API SITNA" GitHub link in attribution control */
-.tc-ctl-attrib .tc-github {
-  display: none !important;
-}
+ 
