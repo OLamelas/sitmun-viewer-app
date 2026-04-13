@@ -81,7 +81,7 @@ export class MoreInfoService {
     if (task?.scope === 'API') {
       return this.executeApiQuery(parameters, task, featureData);
     }
-    if (task?.scope === 'URL') {
+    if (task?.scope === 'URL' || task?.scope === 'url-query') {
       return this.executeUrlQuery(task, featureData);
     }
 
