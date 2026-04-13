@@ -3,52 +3,69 @@ import { Inject, Injectable } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import {
+  URL_API_USER_ACCOUNT,
   URL_AUTH_LOGIN,
+  URL_AUTH_LOGOUT,
   URL_AUTH_METHODS,
+  URL_AUTH_PROXY,
   URL_OIDC_AUTH
 } from '@api/api-config';
+import { UserDto } from '@api/model/user';
 import {
   AUTH_CONFIG_DI,
   AuthConfig,
-  AuthenticationRequest,
-  AuthenticationResponse
+  AuthenticationRequest
 } from '@auth/authentication.options';
 import { NavigationPath, QueryParam } from '@config/app.config';
-import jwtDecode, { JwtPayload } from 'jwt-decode';
-import { CookieService } from 'ngx-cookie-service';
-import { tap } from 'rxjs';
+import { Observable, Subscription, catchError, map, of, switchMap, tap, timer } from 'rxjs';
 
+import { IndexedDbService } from './indexed-db.service';
 import { environment } from '../../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthenticationService<T> {
-  // localStorage keys
-  readonly AUTH_TOKEN: string;
+  // sessionStorage keys
+  private readonly USERNAME_KEY: string;
   readonly AUTH_DETAILS: string;
+
+  private proxyRefreshSubscription: Subscription | null = null;
+  private indexedDbInitialized = false;
+
   constructor(
     private readonly http: HttpClient,
     private readonly router: Router,
-    private readonly cookieService: CookieService,
+    private readonly indexedDb: IndexedDbService,
     @Inject(AUTH_CONFIG_DI) private readonly config: AuthConfig<T>
   ) {
-    // TODO
-    this.AUTH_TOKEN = this.config.localStoragePrefix + '_auth_token';
+    this.USERNAME_KEY = this.config.localStoragePrefix + '_username';
     this.AUTH_DETAILS = this.config.localStoragePrefix + '_auth_details';
+  }
+
+  async initializeIndexedDb(): Promise<void> {
+    if (this.indexedDbInitialized) {
+      return;
+    }
+
+    try {
+      await this.indexedDb.init();
+      this.indexedDbInitialized = true;
+    } catch (err) {
+      console.warn('Failed to init IndexedDB:', err);
+    }
   }
 
   login(authenticationRequest: AuthenticationRequest) {
     return this.http
-      .post<AuthenticationResponse>(
-        environment.apiUrl + URL_AUTH_LOGIN,
-        authenticationRequest
-      )
+      .post<void>(environment.apiUrl + URL_AUTH_LOGIN, authenticationRequest)
       .pipe(
-        tap((res: AuthenticationResponse) => {
-          if (res.id_token != null) {
-            this.setToken(res.id_token);
-          }
+        switchMap(() =>
+          this.http.get<UserDto>(environment.apiUrl + URL_API_USER_ACCOUNT)
+        ),
+        tap((user: UserDto) => {
+          sessionStorage.setItem(this.USERNAME_KEY, user.username);
+          this.startProxyTokenRefresh();
         })
       );
   }
@@ -77,9 +94,11 @@ export class AuthenticationService<T> {
   }
 
   logout(): void {
-    this.clearStorage();
-    this.cookieService.delete('oidc_token');
-    this.router.navigateByUrl(this.config.routes.loginPath).then();
+    this.http
+      .post<void>(environment.apiUrl + URL_AUTH_LOGOUT, null)
+      .subscribe(() => {
+        this.clearSessionAndRedirectToLogin();
+      });
   }
 
   getAuthMethods() {
@@ -90,8 +109,16 @@ export class AuthenticationService<T> {
     globalThis.location.href = `${environment.apiUrl}${URL_OIDC_AUTH}/${providerId}?client_type=viewer`;
   }
 
-  authorizeOidcUser(token: string) {
-    this.setToken(token);
+  authorizeOidcUser(): Observable<void> {
+    return this.http
+      .get<UserDto>(environment.apiUrl + URL_API_USER_ACCOUNT)
+      .pipe(
+        tap((user: UserDto) => {
+          sessionStorage.setItem(this.USERNAME_KEY, user.username);
+          this.startProxyTokenRefresh();
+        }),
+        map(() => undefined)
+      );
   }
 
   // Helpers ------------------------------------------------------------------
@@ -101,68 +128,78 @@ export class AuthenticationService<T> {
   }
 
   isLoggedIn(): boolean {
-    return this.getToken() != null;
-  }
-
-  getLoggedToken() {
-    const token = this.getToken();
-    if (token == null) {
-      throw Error('Not authentication token!');
-    }
-    return token;
+    return !!sessionStorage.getItem(this.USERNAME_KEY);
   }
 
   getLoggedUsername(): string {
-    const decodedToken = jwtDecode<JwtPayload>(this.getLoggedToken());
-    if (!decodedToken.sub) {
-      throw Error('Not authentication token!');
-    }
-    return decodedToken.sub;
+    return sessionStorage.getItem(this.USERNAME_KEY) ?? '';
   }
 
   getLoggedDetails(): T {
     const details = this.getDetails();
     if (details == null) {
-      throw Error('Not authentication details!');
+      throw new Error('Not authentication details!');
     }
     return details;
   }
 
-  // localStorage utils --------------------------------------------------------
-  // TODO
+  // Proxy token refresh -------------------------------------------------------
 
-  private clearStorage = (): void => {
-    localStorage.removeItem(this.AUTH_TOKEN);
-    localStorage.removeItem(this.AUTH_DETAILS);
-  };
-
-  private getToken = (): string | null => {
-    const token = localStorage.getItem(this.AUTH_TOKEN);
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'AUTH_TOKEN',
-        token: token
-      });
+  private startProxyTokenRefresh(): void {
+    if (this.proxyRefreshSubscription) {
+      this.proxyRefreshSubscription.unsubscribe();
     }
-    return token;
-  };
 
-  private setToken = (token: string): void => {
-    localStorage.setItem(this.AUTH_TOKEN, token);
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'AUTH_TOKEN',
-        token: token
-      });
+    this.proxyRefreshSubscription = timer(
+      0,
+      environment.proxyTokenRefreshIntervalMs
+    )
+      .pipe(switchMap(() => this.refreshProxyToken()))
+      .subscribe();
+  }
+
+  private refreshProxyToken() {
+    return this.http
+      .post<{ proxy_token?: string }>(environment.apiUrl + URL_AUTH_PROXY, null)
+      .pipe(
+        switchMap(async (response) => {
+          if (response.proxy_token) {
+            await this.indexedDb.set('proxy_token', response.proxy_token);
+          }
+          return response;
+        }),
+        catchError((err) => {
+          console.warn('Error refreshing proxy token:', err);
+          return of(null);
+        })
+      );
+  }
+
+  private stopProxyTokenRefresh(): void {
+    if (this.proxyRefreshSubscription) {
+      this.proxyRefreshSubscription.unsubscribe();
+      this.proxyRefreshSubscription = null;
     }
-  };
+  }
 
-  private getDetails = (): T | null => {
-    const serialized = localStorage.getItem(this.AUTH_DETAILS);
+  // Session utils ------------------------------------------------------------
+
+  clearSessionAndRedirectToLogin(): void {
+    this.clearSession();
+    void this.router.navigateByUrl(this.config.routes.loginPath);
+  }
+
+  private clearSession(): void {
+    sessionStorage.removeItem(this.USERNAME_KEY);
+    sessionStorage.removeItem(this.AUTH_DETAILS);
+    this.stopProxyTokenRefresh();
+    this.indexedDb
+      .remove('proxy_token')
+      .catch((err) => console.warn('Error clearing proxy token:', err));
+  }
+
+  private readonly getDetails = (): T | null => {
+    const serialized = sessionStorage.getItem(this.AUTH_DETAILS);
     return serialized ? JSON.parse(serialized) : null;
-  };
-
-  private setDetails = (details: T): void => {
-    localStorage.setItem(this.AUTH_DETAILS, JSON.stringify(details));
   };
 }
