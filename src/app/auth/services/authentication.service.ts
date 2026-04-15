@@ -28,7 +28,6 @@ import { environment } from '../../../environments/environment';
 export class AuthenticationService<T> {
   // sessionStorage keys
   private readonly USERNAME_KEY: string;
-  readonly AUTH_DETAILS: string;
 
   private proxyRefreshSubscription: Subscription | null = null;
   private indexedDbInitialized = false;
@@ -40,7 +39,6 @@ export class AuthenticationService<T> {
     @Inject(AUTH_CONFIG_DI) private readonly config: AuthConfig<T>
   ) {
     this.USERNAME_KEY = this.config.localStoragePrefix + '_username';
-    this.AUTH_DETAILS = this.config.localStoragePrefix + '_auth_details';
   }
 
   async initializeIndexedDb(): Promise<void> {
@@ -74,22 +72,12 @@ export class AuthenticationService<T> {
     // Check for redirect query parameter
     const redirectUrl =
       route.snapshot.queryParams[QueryParam.Login.RedirectAfterLogin];
-    const AUTH_CONFIG = this.getAuthConfig();
 
     if (redirectUrl) {
       // Redirect to the originally requested URL
       void this.router.navigateByUrl(redirectUrl);
     } else {
-      // Use default path - get auth details for defaultPath function
-      try {
-        const authDetails = this.getLoggedDetails();
-        void this.router.navigateByUrl(
-          AUTH_CONFIG.routes.defaultPath(authDetails)
-        );
-      } catch {
-        // Fallback to dashboard if details not available yet
-        void this.router.navigateByUrl(NavigationPath.Section.User.Dashboard);
-      }
+      void this.router.navigateByUrl(NavigationPath.Section.User.Dashboard);
     }
   }
 
@@ -133,14 +121,6 @@ export class AuthenticationService<T> {
 
   getLoggedUsername(): string {
     return sessionStorage.getItem(this.USERNAME_KEY) ?? '';
-  }
-
-  getLoggedDetails(): T {
-    const details = this.getDetails();
-    if (details == null) {
-      throw new Error('Not authentication details!');
-    }
-    return details;
   }
 
   // Proxy token refresh -------------------------------------------------------
@@ -191,15 +171,9 @@ export class AuthenticationService<T> {
 
   private clearSession(): void {
     sessionStorage.removeItem(this.USERNAME_KEY);
-    sessionStorage.removeItem(this.AUTH_DETAILS);
     this.stopProxyTokenRefresh();
     this.indexedDb
       .remove('proxy_token')
       .catch((err) => console.warn('Error clearing proxy token:', err));
   }
-
-  private readonly getDetails = (): T | null => {
-    const serialized = sessionStorage.getItem(this.AUTH_DETAILS);
-    return serialized ? JSON.parse(serialized) : null;
-  };
 }
