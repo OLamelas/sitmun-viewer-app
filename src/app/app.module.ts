@@ -43,6 +43,7 @@ import { NgxPaginationModule } from 'ngx-pagination';
 import { SharedPipesModule } from './../util/pipe/SharedPipesModule';
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+import { CredentialsInterceptor } from './config/credentials.interceptor';
 import { ErrorHandlerInterceptor } from './config/error-handler.interceptor';
 import { ALL_CONTROL_HANDLERS } from './controls/handlers';
 import { MessageBoxDialogComponent } from '../util/message-box-service';
@@ -114,6 +115,11 @@ registerLocaleData(localeEs);
     { provide: LOCALE_ID, useValue: 'es-ES' },
     { provide: AUTH_CONFIG_DI, useValue: CustomAuthConfig },
     { provide: ErrorHandler, useClass: GlobalErrorHandler },
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: CredentialsInterceptor,
+      multi: true
+    },
     {
       provide: HTTP_INTERCEPTORS,
       useClass: ErrorHandlerInterceptor,
