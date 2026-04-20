@@ -13,6 +13,10 @@ export const URL_OIDC_AUTH = '/oauth2/authorization';
 
 export const URL_AUTH_LOGIN = BASE_URL + '/authenticate';
 
+export const URL_AUTH_LOGOUT = BASE_URL + '/authenticate/logout';
+
+export const URL_AUTH_PROXY = BASE_URL + '/authenticate/proxy';
+
 export const URL_API_USER_ACCOUNT = BASE_URL + '/account';
 
 export const URL_API_USER_ACCOUNT_PUBLIC = BASE_URL + '/account/public';

@@ -6,8 +6,8 @@ import {
   HttpRequest
 } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Router } from '@angular/router';
 
+import { URL_AUTH_LOGOUT } from '@api/api-config';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
@@ -18,26 +18,21 @@ import { AuthenticationService } from './authentication.service';
 })
 export class AuthenticationInterceptor implements HttpInterceptor {
   constructor(
-    private authenticationService: AuthenticationService<unknown>,
-    private router: Router
+    private readonly authenticationService: AuthenticationService<unknown>
   ) {}
 
   intercept(
     req: HttpRequest<unknown>,
     next: HttpHandler
   ): Observable<HttpEvent<unknown>> {
-    if (this.authenticationService.isLoggedIn()) {
-      req = req.clone({
-        headers: req.headers.set(
-          'Authorization',
-          `Bearer ${this.authenticationService.getLoggedToken()}`
-        )
-      });
-    }
     return next.handle(req).pipe(
       catchError((err: HttpErrorResponse) => {
         if (err.status === 401) {
-          this.authenticationService.logout();
+          if (req.url.includes(URL_AUTH_LOGOUT)) {
+            this.authenticationService.clearSessionAndRedirectToLogin();
+          } else {
+            this.authenticationService.logout();
+          }
         }
 
         // Let the app keep running by returning an empty result

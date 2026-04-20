@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 
+import { AuthenticationService } from './auth/services/authentication.service';
 import { LanguageService } from './services/language.service';
 
 @Component({
@@ -8,10 +9,13 @@ import { LanguageService } from './services/language.service';
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss']
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   title = 'sitmun-viewer-app';
 
-  constructor(private languageService: LanguageService) {
+  constructor(
+    private readonly languageService: LanguageService,
+    private readonly authenticationService: AuthenticationService<any>
+  ) {
     // Initialize TranslateService with current language
     this.languageService.initializeTranslateService();
 
@@ -20,6 +24,12 @@ export class AppComponent {
     this.languageService.loadUserLanguage().subscribe();
 
     this.generateDeviceID();
+  }
+
+  ngOnInit(): void {
+    this.authenticationService.initializeIndexedDb().catch((err) => {
+      console.error('Failed to initialize IndexedDB:', err);
+    });
   }
 
   /**

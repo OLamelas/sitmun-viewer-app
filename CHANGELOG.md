@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- Route-level `AuthenticationGuard` on `auth`, `public`, and the main shell so protected areas require a session, public areas stay reachable, and login can record a post-login redirect URL.
+- `CredentialsInterceptor` so HttpClient sends cookies (`withCredentials`) on same-origin API traffic.
+- `AuthenticationInterceptor` to treat HTTP 401 responses: full session reset when the failing call is the logout endpoint, otherwise coordinated logout through `AuthenticationService`.
+- `IndexedDbService` for persisting the authorization proxy token and lightweight config keys (for example middleware URL) used by the map stack and service worker integration.
+- `MapServiceWorkerService` wiring that stores middleware URL in IndexedDB and posts it to the service worker for proxy-backed map requests.
+- OAuth2/OpenID Connect `/callback` route and `CallbackComponent` flow to finish viewer sign-in after the identity provider redirect.
+- Jest unit tests for `AuthenticationInterceptor`, `CredentialsInterceptor`, `AuthenticationGuard`, and `IndexedDbService`.
+
+### Changed
+
+- `AuthenticationService` session helpers, OIDC entry (`initOidcAuth` / `authorizeOidcUser`), periodic proxy token refresh, and cleanup paths aligned with backend cookie/session behavior.
+- GitHub Actions CI uses Node.js 20.19 (aligned with `engines`), runs ESLint, fails the job on test failures, and builds with the `production` Angular configuration instead of the removed `testdeployment` profile.
+- Regenerated `package-lock.json` so `npm ci` stays in sync with `package.json`.
+
 ## [1.2.5] - 2026-03-11
 
 ### Changed
