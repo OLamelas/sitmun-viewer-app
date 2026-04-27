@@ -245,7 +245,7 @@ export class FeatureInfoMoreInfoHandler {
         const taskKey = this.getTaskKey(task, index);
         const placeholderId = this.getPlaceholderId(feature, taskKey);
         newData[fieldName] = this.buildMoreInfoPlaceholder(
-          taskText,
+          task,
           taskKey,
           cartographyId,
           placeholderId
@@ -274,8 +274,7 @@ export class FeatureInfoMoreInfoHandler {
         }
         newData[fieldName] = this.buildMoreInfoLink(
           url,
-          taskText,
-          task.id,
+          task,
           cartographyId,
           index
         );
@@ -297,6 +296,7 @@ export class FeatureInfoMoreInfoHandler {
     return (
       task?.scope === 'SQL' ||
       task?.scope === 'API' ||
+      task?.scope === 'RESOURCE' ||
       (queryType && queryType !== 'url') ||
       (!!taskParameters?.apiUrl && queryType !== 'url')
     );
@@ -395,32 +395,163 @@ export class FeatureInfoMoreInfoHandler {
     if (result.redirected) {
       return;
     }
-
     if (result.error) {
-      const message = 'Error: ' + result.error;
-      if (placeholderId) {
-        if (!this.updatePlaceholder(placeholderId, this.escapeHtml(message))) {
-          this.pendingResults.set(placeholderId, { task, result });
-        }
-        return;
-      }
-      alert(message);
+      this.displayErrorResult(result.error, task, placeholderId);
+    } else if (result.directUrl) {
+      this.displayDirectUrlResult(result, task, placeholderId);
+    } else if (result.blob) {
+      this.displayBlobResult(result, task, placeholderId);
     } else if (result.data) {
-      const rows = normalizeMoreInfoRows(result.data);
-      const tableHtml = this.renderTableHtml(rows);
-      if (placeholderId) {
-        if (!this.updatePlaceholder(placeholderId, tableHtml)) {
-          this.pendingResults.set(placeholderId, { task, result });
-        }
-        return;
-      }
-      if (this.showJsonResult) {
-        const title = task?.name || 'More info';
-        this.showJsonResult(title, rows);
-        return;
-      }
-      alert('More info:\n' + JSON.stringify(result.data, null, 2));
+      this.displayDataResult(result.data, task, placeholderId);
     }
+  }
+
+  private displayErrorResult(error: string, task: any, placeholderId?: string): void {
+    const message = 'Error: ' + error;
+    if (placeholderId) {
+      if (!this.updatePlaceholder(placeholderId, this.escapeHtml(message))) {
+        this.pendingResults.set(placeholderId, { task, result: { error } });
+      }
+      return;
+    }
+    alert(message);
+  }
+
+  private displayDirectUrlResult(result: any, task: any, placeholderId?: string): void {
+    const html = this.renderDirectUrlHtml(result.directUrl, result.mimeType, result.filename);
+    if (placeholderId) {
+      if (!this.updatePlaceholder(placeholderId, html)) {
+        this.pendingResults.set(placeholderId, { task, result });
+      }
+      return;
+    }
+    window.open(result.directUrl, '_blank');
+  }
+
+  private static readonly MIME_TYPE_INFO: Record<string, { icon: string; label: string }> = {
+    'application/pdf':  { icon: '📄', label: 'PDF' },
+    'application/xml':  { icon: '📋', label: 'XML' },
+    'text/xml':         { icon: '📋', label: 'XML' },
+    'text/csv':         { icon: '📊', label: 'CSV' },
+    'application/msword':                                                          { icon: '📝', label: 'DOC' },
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':     { icon: '📝', label: 'DOCX' },
+    'application/vnd.ms-excel':                                                    { icon: '📊', label: 'XLS' },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':           { icon: '📊', label: 'XLSX' },
+    'application/vnd.oasis.opendocument.text':                                     { icon: '📝', label: 'ODT' },
+    'application/vnd.oasis.opendocument.spreadsheet':                              { icon: '📊', label: 'ODS' },
+  };
+
+  private getMimeTypeInfo(mimeType: string): { icon: string; label: string } {
+    const known = FeatureInfoMoreInfoHandler.MIME_TYPE_INFO[mimeType];
+    if (known) return known;
+    // Generic fallback: extract the meaningful part of the subtype (e.g. 'zip' from 'application/zip',
+    // 'excel' from 'application/vnd.ms-excel', 'spreadsheet' from '...opendocument.spreadsheet')
+    const subtype = mimeType.split('/')[1] ?? mimeType;
+    const label = subtype.split(/[.+-]/).pop()?.toUpperCase() ?? 'File';
+    return { icon: '📎', label };
+  }
+
+  private renderDirectUrlHtml(url: string, mimeType: string, filename: string | null): string {
+    if (mimeType?.startsWith('image/')) {
+      return '<img src="' + url + '" alt="" style="max-width:100%;height:auto;" />';
+    }
+    const { icon, label } = this.getMimeTypeInfo(mimeType);
+    const linkText = this.escapeHtml(filename ?? label);
+    return (
+      icon + '\u00a0<a href="' + url + '" target="_blank">' + linkText + '</a>' +
+      '\u00a0<span class="sitmun-mime-label" style="font-size:0.85em;opacity:0.7;">(' + this.escapeHtml(label) + ')</span>'
+    );
+  }
+
+  private displayBlobResult(result: any, task: any, placeholderId?: string): void {
+    const html = this.renderBlobResult(result);
+    if (placeholderId) {
+      if (!this.updatePlaceholder(placeholderId, html)) {
+        this.pendingResults.set(placeholderId, { task, result });
+      }
+      return;
+    }
+    if (this.showJsonResult && result.mimeType === 'application/json') {
+      result.blob.text().then((text: string) => {
+        try {
+          const rows = normalizeMoreInfoRows(JSON.parse(text));
+          this.showJsonResult!(task?.name || 'More info', rows);
+        } catch {
+          alert(text);
+        }
+      });
+    } else {
+      this.triggerBlobAction(result);
+    }
+  }
+
+  private displayDataResult(data: any, task: any, placeholderId?: string): void {
+    const rows = normalizeMoreInfoRows(data);
+    const tableHtml = this.renderTableHtml(rows);
+    if (placeholderId) {
+      if (!this.updatePlaceholder(placeholderId, tableHtml)) {
+        this.pendingResults.set(placeholderId, { task, result: { data } });
+      }
+      return;
+    }
+    if (this.showJsonResult) {
+      this.showJsonResult(task?.name || 'More info', rows);
+      return;
+    }
+    alert('More info:\n' + JSON.stringify(data, null, 2));
+  }
+
+  private renderBlobResult(result: { blob: Blob; mimeType: string; filename: string | null }): string {
+    const { mimeType } = result;
+
+    if (mimeType.startsWith('image/')) {
+      const objectUrl = URL.createObjectURL(result.blob);
+      return '<img src="' + objectUrl + '" alt="" style="max-width:100%;height:auto;" />';
+    }
+
+    if (mimeType === 'application/json') {
+      // Render asynchronously: return a temporary placeholder while we read the blob
+      const placeholderId = 'sitmun-blob-json-' + String(++this.placeholderCounter);
+      result.blob.text().then((text: string) => {
+        try {
+          const rows = normalizeMoreInfoRows(JSON.parse(text));
+          const el = document.querySelector<HTMLElement>('[data-blob-id="' + placeholderId + '"]');
+          if (el) {
+            el.outerHTML = this.renderTableHtml(rows);
+          }
+        } catch {
+          const el = document.querySelector<HTMLElement>('[data-blob-id="' + placeholderId + '"]');
+          if (el) {
+            el.textContent = text;
+          }
+        }
+      });
+      return '<span data-blob-id="' + placeholderId + '">Carregant...</span>';
+    }
+
+    // Binary / PDF / other: render a download link
+    const objectUrl = URL.createObjectURL(result.blob);
+    const name = result.filename ?? 'document';
+    return (
+      '<a href="' + objectUrl + '" download="' + this.escapeHtml(name) +
+      '" target="_blank">' + this.escapeHtml(name) + '</a>'
+    );
+  }
+
+  /** For non-placeholder display (interactive click): open or download the blob. */
+  private triggerBlobAction(result: { blob: Blob; mimeType: string; filename: string | null }): void {
+    const { mimeType } = result;
+    const objectUrl = URL.createObjectURL(result.blob);
+
+    if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+      window.open(objectUrl, '_blank');
+      return;
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = result.filename ?? 'document';
+    anchor.click();
   }
 
   private renderTableHtml(rows: any[]): string {
@@ -495,6 +626,7 @@ export class FeatureInfoMoreInfoHandler {
       return false;
     }
 
+    element.classList.remove('sitmun-more-info-loading');
     element.innerHTML = html;
     return true;
   }
@@ -508,9 +640,14 @@ export class FeatureInfoMoreInfoHandler {
       );
       if (!element) return;
 
+      element.classList.remove('sitmun-more-info-loading');
       const result = payload.result;
       if (result?.error) {
         element.innerHTML = this.escapeHtml('Error: ' + result.error);
+      } else if (result?.directUrl) {
+        element.innerHTML = this.renderDirectUrlHtml(result.directUrl, result.mimeType, result.filename);
+      } else if (result?.blob) {
+        element.innerHTML = this.renderBlobResult(result);
       } else if (result?.data) {
         const rows = normalizeMoreInfoRows(result.data);
         element.innerHTML = this.renderTableHtml(rows);
@@ -555,46 +692,73 @@ export class FeatureInfoMoreInfoHandler {
     return base + '\u200B'.repeat(index);
   }
 
+  /**
+   * Returns the content-type noun used to build the collapsible summary labels.
+   * Generic by design: new mime types fall through to 'document' without any changes here.
+   */
+  private getContentTypeLabel(task: any): string {
+    const scope: string = task?.scope ?? '';
+    const mimeType: string = task?.mimeType ?? '';
+
+    if (scope === 'URL') return 'enllaç';
+    if (mimeType.startsWith('image/')) return 'imatge';
+    if (mimeType === 'application/json' || scope === 'SQL' || scope === 'API') return 'taula';
+    if (mimeType.length > 0) return 'document';
+    return 'informació';
+  }
+
+  /**
+   * Builds the <summary> element with two spans toggled by CSS:
+   * - .sitmun-label-closed visible when <details> is closed  ("Veure taula")
+   * - .sitmun-label-open  visible when <details> is open     ("Amagar taula")
+   */
+  private buildCollapsibleSummary(task: any): string {
+    const label = this.getContentTypeLabel(task);
+    return (
+      '<summary class="sitmun-more-info-summary">' +
+      '<span class="sitmun-label-closed">Veure ' + label + '</span>' +
+      '<span class="sitmun-label-open">Amagar ' + label + '</span>' +
+      '</summary>'
+    );
+  }
+
   private buildMoreInfoLink(
     url: string,
-    taskText: string,
-    taskId: string | undefined,
+    task: any,
     cartographyId: string,
     taskIndex: number
   ): string {
-    const safeTaskId = taskId ?? '';
+    const safeTaskId = task?.id ?? '';
     return (
-      '<a href="' +
-      url +
-      '" class="sitmun-more-info-link" data-task-id="' +
-      safeTaskId +
-      '" data-cartography-id="' +
-      cartographyId +
-      '" data-task-index="' +
-      String(taskIndex) +
-      '" target="_blank" rel="noopener noreferrer">' +
-      taskText +
-      '</a>'
+      '<details class="sitmun-more-info-collapsible">' +
+      this.buildCollapsibleSummary(task) +
+      '<div>' +
+      '<a href="' + url +
+      '" class="sitmun-more-info-link" target="_blank" rel="noopener noreferrer" data-task-id="' + safeTaskId +
+      '" data-cartography-id="' + cartographyId +
+      '" data-task-index="' + String(taskIndex) +
+      '">' +
+      this.escapeHtml(task?.name ?? '') +
+      '</a>' +
+      '</div>' +
+      '</details>'
     );
   }
 
   private buildMoreInfoPlaceholder(
-    taskText: string,
+    task: any,
     taskId: string,
     cartographyId: string,
     placeholderId: string
   ): string {
     return (
-      '<span class="sitmun-more-info-placeholder" data-task-id="' +
-      taskId +
-      '" data-cartography-id="' +
-      cartographyId +
-      '" data-placeholder-id="' +
-      placeholderId +
-      '">' +
-      this.escapeHtml(taskText) +
-      ' (Carregant...)' +
-      '</span>'
+      '<details class="sitmun-more-info-collapsible">' +
+      this.buildCollapsibleSummary(task) +
+      '<div class="sitmun-more-info-placeholder sitmun-more-info-loading" data-task-id="' + taskId +
+      '" data-cartography-id="' + cartographyId +
+      '" data-placeholder-id="' + placeholderId +
+      '">Carregant...</div>' +
+      '</details>'
     );
   }
 }
