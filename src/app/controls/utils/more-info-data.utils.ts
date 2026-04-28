@@ -99,6 +99,62 @@ function flattenToPathRows(data: any): MoreInfoRow[] {
   return rows;
 }
 
+/**
+ * Converts an XML string to an array of rows for table rendering.
+ *
+ * Strategy:
+ * - Root with multiple children sharing the same tag → treat as array (each child = one row).
+ * - Otherwise → flatten root children as { field, value } key-value pairs.
+ * - Falls back to a single { value } row if parsing fails or the content is text-only.
+ */
+export function normalizeXmlRows(xmlText: string): MoreInfoRow[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText.trim(), 'application/xml');
+
+  if (doc.querySelector('parsererror')) {
+    return [{ value: xmlText }];
+  }
+
+  const root = doc.documentElement;
+  const children = Array.from(root.children);
+
+  if (children.length === 0) {
+    const text = root.textContent?.trim() ?? '';
+    return text ? [{ value: text }] : [];
+  }
+
+  const firstTag = children[0].tagName;
+  const isRepeating =
+    children.length > 1 && children.every((c) => c.tagName === firstTag);
+
+  if (isRepeating) {
+    return children.map(xmlElementToRow);
+  }
+
+  return children.map((el) => ({
+    field: el.tagName,
+    value: el.textContent?.trim() ?? '',
+  }));
+}
+
+function xmlElementToRow(el: Element): MoreInfoRow {
+  const row: MoreInfoRow = {};
+
+  Array.from(el.attributes).forEach((attr) => {
+    row[attr.name] = attr.value;
+  });
+
+  Array.from(el.children).forEach((child) => {
+    row[child.tagName] = child.textContent?.trim() ?? '';
+  });
+
+  if (Object.keys(row).length === 0) {
+    row['value'] = el.textContent?.trim() ?? '';
+  }
+
+  return row;
+}
+
 function hasNestedValues(value: any): boolean {
   if (!value || typeof value !== 'object') return false;
 

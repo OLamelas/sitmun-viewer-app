@@ -125,9 +125,10 @@ export class MoreInfoService {
       return of({ success: true, directUrl: url, mimeType, filename });
     }
 
-    // JSON: fetch content without Angular interceptors (avoids auth headers triggering CORS
-    // preflight) so we can parse and display it as a data table.
-    if (mimeType === 'application/json') {
+    // JSON and XML: fetch content without Angular interceptors (avoids auth headers triggering
+    // CORS preflight) so we can parse and display as a data table.
+    // If the remote server does not allow CORS, fall back gracefully to a direct link.
+    if (mimeType === 'application/json' || mimeType === 'application/xml' || mimeType === 'text/xml') {
       return from(
         fetch(url).then((response) => {
           const contentType = response.headers.get('Content-Type') || mimeType;
@@ -139,8 +140,9 @@ export class MoreInfoService {
           }));
         })
       ).pipe(
-        catchError((error) =>
-          of({ error: (error as Error).message || 'Resource fetch failed' })
+        catchError(() =>
+          // CORS or network failure: fall back to a direct link so the user can still access the content.
+          of({ success: true, directUrl: url, mimeType, filename })
         )
       );
     }

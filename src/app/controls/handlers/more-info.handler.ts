@@ -1,7 +1,7 @@
 import type { AppCfg } from '@api/model/app-cfg';
 
 import { MoreInfoService } from '../../services/more-info.service';
-import { normalizeMoreInfoRows } from '../utils/more-info-data.utils';
+import { normalizeMoreInfoRows, normalizeXmlRows } from '../utils/more-info-data.utils';
 
 export class FeatureInfoMoreInfoHandler {
   private placeholderCounter = 0;
@@ -487,6 +487,15 @@ export class FeatureInfoMoreInfoHandler {
           alert(text);
         }
       });
+    } else if (this.showJsonResult && (result.mimeType === 'application/xml' || result.mimeType === 'text/xml')) {
+      result.blob.text().then((text: string) => {
+        const rows = normalizeXmlRows(text);
+        if (rows.length > 0) {
+          this.showJsonResult!(task?.name || 'More info', rows);
+        } else {
+          alert(text);
+        }
+      });
     } else {
       this.triggerBlobAction(result);
     }
@@ -531,6 +540,20 @@ export class FeatureInfoMoreInfoHandler {
           if (el) {
             el.textContent = text;
           }
+        }
+      });
+      return '<span data-blob-id="' + placeholderId + '">Carregant...</span>';
+    }
+
+    if (mimeType === 'application/xml' || mimeType === 'text/xml') {
+      const placeholderId = 'sitmun-blob-xml-' + String(++this.placeholderCounter);
+      result.blob.text().then((text: string) => {
+        const rows = normalizeXmlRows(text);
+        const el = document.querySelector<HTMLElement>('[data-blob-id="' + placeholderId + '"]');
+        if (el) {
+          el.outerHTML = rows.length > 0
+            ? this.renderTableHtml(rows)
+            : '<pre style="white-space:pre-wrap;word-break:break-word">' + this.escapeHtml(text) + '</pre>';
         }
       });
       return '<span data-blob-id="' + placeholderId + '">Carregant...</span>';
@@ -709,7 +732,7 @@ export class FeatureInfoMoreInfoHandler {
 
     if (scope === 'URL') return 'enllaç';
     if (mimeType.startsWith('image/')) return 'imatge';
-    if (mimeType === 'application/json' || scope === 'SQL' || scope === 'API') return 'taula';
+    if (mimeType === 'application/json' || mimeType === 'application/xml' || mimeType === 'text/xml' || scope === 'SQL' || scope === 'API') return 'taula';
     if (mimeType.length > 0) return 'document';
     return 'informació';
   }
