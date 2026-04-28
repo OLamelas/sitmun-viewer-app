@@ -238,5 +238,7 @@
   "systemInfo.errorType.uncaught": "Excepción No Capturada",
   "systemInfo.copyError": "Copiar Error",
   "systemInfo.closeErrorPanel": "Cerrar",
-  "common.button.close": "Cerrar"
+  "common.button.close": "Cerrar",
+  "moreInfo.show": "Ver contenido",
+  "moreInfo.hide": "Ocultar contenido"
 }

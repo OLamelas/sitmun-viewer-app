@@ -239,5 +239,7 @@
   "systemInfo.errorType.uncaught": "Uncaught Exception",
   "systemInfo.copyError": "Copy Error",
   "systemInfo.closeErrorPanel": "Close",
-  "common.button.close": "Close"
+  "common.button.close": "Close",
+  "moreInfo.show": "Show content",
+  "moreInfo.hide": "Hide content"
 }

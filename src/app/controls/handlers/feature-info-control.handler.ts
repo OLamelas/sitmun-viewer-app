@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 
 import { AppCfg } from '@api/model/app-cfg';
+import { TranslateService } from '@ngx-translate/core';
 
 import { FeatureInfoMoreInfoHandler } from './more-info.handler';
 import { MoreInfoService } from '../../services/more-info.service';
@@ -38,11 +39,13 @@ export class FeatureInfoControlHandler extends ControlHandlerBase {
   readonly sitnaConfigKey = 'featureInfo';
   readonly requiredPatches = undefined;
   private readonly moreInfoService = inject(MoreInfoService);
+  private readonly translateService = inject(TranslateService);
   private readonly mapEventCleanups: Array<() => void> = [];
   private appConfig: AppCfg | null = null;
   private readonly moreInfoHandler = new FeatureInfoMoreInfoHandler(
     this.moreInfoService,
-    () => this.appConfig
+    () => this.appConfig,
+    this.translateService
   );
 
   constructor(sitnaApi: SitnaApiService) {

@@ -176,5 +176,7 @@
   "territory.descriptionMissing": "Aucune description",
   "genericPrivateHeaders.changeAppOrTerritory": "Changer d'application ou de territoire",
   "common.filterHintSelectedApplicationAlwaysVisible": "L'application sélectionnée reste toujours visible",
-  "common.filterHintSelectedTerritoryAlwaysVisible": "Le territoire sélectionné reste toujours visible"
+  "common.filterHintSelectedTerritoryAlwaysVisible": "Le territoire sélectionné reste toujours visible",
+  "moreInfo.show": "Voir le contenu",
+  "moreInfo.hide": "Masquer le contenu"
 }

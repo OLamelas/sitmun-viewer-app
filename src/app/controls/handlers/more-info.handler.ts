@@ -1,4 +1,5 @@
 import type { AppCfg } from '@api/model/app-cfg';
+import { TranslateService } from '@ngx-translate/core';
 
 import { MoreInfoService } from '../../services/more-info.service';
 import { normalizeMoreInfoRows, normalizeXmlRows } from '../utils/more-info-data.utils';
@@ -15,6 +16,7 @@ export class FeatureInfoMoreInfoHandler {
   constructor(
     private readonly moreInfoService: MoreInfoService,
     private readonly getAppConfig: () => AppCfg | null,
+    private readonly translateService: TranslateService,
     private readonly showJsonResult?: (title: string, rows: any[]) => void
   ) {}
 
@@ -559,12 +561,14 @@ export class FeatureInfoMoreInfoHandler {
       return '<span data-blob-id="' + placeholderId + '">Carregant...</span>';
     }
 
-    // Binary / PDF / other: render a download link
+    // Binary / PDF / other: render a download link with icon and type label.
+    // The ⬇ suffix signals to the user that clicking will download the file.
     const objectUrl = URL.createObjectURL(result.blob);
-    const name = result.filename ?? 'document';
+    const { icon, label } = this.getMimeTypeInfo(mimeType);
+    const name = this.escapeHtml(result.filename ?? label);
     return (
-      '<a href="' + objectUrl + '" download="' + this.escapeHtml(name) +
-      '" target="_blank">' + this.escapeHtml(name) + '</a>'
+      icon + '\u00a0<a href="' + objectUrl + '" download="' + name + '">' + name + '</a>' +
+      '\u00a0<span class="sitmun-mime-label" style="font-size:0.85em;opacity:0.7;">(' + this.escapeHtml(label) + '\u00a0⬇)</span>'
     );
   }
 
@@ -723,32 +727,18 @@ export class FeatureInfoMoreInfoHandler {
   }
 
   /**
-   * Returns the content-type noun used to build the collapsible summary labels.
-   * Generic by design: new mime types fall through to 'document' without any changes here.
-   */
-  private getContentTypeLabel(task: any): string {
-    const scope: string = task?.scope ?? '';
-    const mimeType: string = task?.mimeType ?? '';
-
-    if (scope === 'URL') return 'enllaç';
-    if (mimeType.startsWith('image/')) return 'imatge';
-    if (mimeType === 'application/json' || mimeType === 'application/xml' || mimeType === 'text/xml' || scope === 'SQL' || scope === 'API') return 'taula';
-    if (mimeType.length > 0) return 'document';
-    return 'informació';
-  }
-
-  /**
    * Builds the <summary> element with two spans toggled by CSS:
-   * - .sitmun-label-closed visible when <details> is closed  ("Veure taula")
-   * - .sitmun-label-open  visible when <details> is open     ("Amagar taula")
+   * - .sitmun-label-closed visible when <details> is closed  ("Veure contingut")
+   * - .sitmun-label-open  visible when <details> is open     ("Amagar contingut")
    */
-  private buildCollapsibleSummary(task: any): string {
-    const label = this.getContentTypeLabel(task);
+  private buildCollapsibleSummary(): string {
+    const show = this.translateService.instant('moreInfo.show');
+    const hide = this.translateService.instant('moreInfo.hide');
     return (
-      '<summary class="sitmun-more-info-summary">' +
-      '<span class="sitmun-label-closed">Veure ' + label + '</span>' +
-      '<span class="sitmun-label-open">Amagar ' + label + '</span>' +
-      '</summary>'
+      '<summary class="sitmun-more-info-summary">'
+      + '<span class="sitmun-label-closed">' + show + '</span>'
+      + '<span class="sitmun-label-open">' + hide + '</span>'
+      + '</summary>'
     );
   }
 
@@ -761,7 +751,7 @@ export class FeatureInfoMoreInfoHandler {
     const safeTaskId = task?.id ?? '';
     return (
       '<details class="sitmun-more-info-collapsible">' +
-      this.buildCollapsibleSummary(task) +
+      this.buildCollapsibleSummary() +
       '<div>' +
       '<a href="' + url +
       '" class="sitmun-more-info-link" target="_blank" rel="noopener noreferrer" data-task-id="' + safeTaskId +
@@ -783,7 +773,7 @@ export class FeatureInfoMoreInfoHandler {
   ): string {
     return (
       '<details class="sitmun-more-info-collapsible">' +
-      this.buildCollapsibleSummary(task) +
+      this.buildCollapsibleSummary() +
       '<div class="sitmun-more-info-placeholder sitmun-more-info-loading" data-task-id="' + taskId +
       '" data-cartography-id="' + cartographyId +
       '" data-placeholder-id="' + placeholderId +
