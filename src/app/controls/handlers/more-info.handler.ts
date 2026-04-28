@@ -750,18 +750,13 @@ export class FeatureInfoMoreInfoHandler {
   ): string {
     const safeTaskId = task?.id ?? '';
     return (
-      '<details class="sitmun-more-info-collapsible">' +
-      this.buildCollapsibleSummary() +
-      '<div>' +
       '<a href="' + url +
       '" class="sitmun-more-info-link" target="_blank" rel="noopener noreferrer" data-task-id="' + safeTaskId +
       '" data-cartography-id="' + cartographyId +
       '" data-task-index="' + String(taskIndex) +
       '">' +
       this.escapeHtml(task?.name ?? '') +
-      '</a>' +
-      '</div>' +
-      '</details>'
+      '</a>'
     );
   }
 
