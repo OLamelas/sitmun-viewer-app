@@ -199,6 +199,18 @@ export class MoreInfoService {
     const params =
       this.buildQueryParams(parameters?.params, featureData) ||
       this.buildTaskParamQuery(task?.parameters, featureData);
+
+    const mimeType: string = task?.mimeType ?? '';
+    const filename: string | null = task?.filename ?? null;
+
+    const isBinary = mimeType.length > 0 && mimeType !== 'application/json';
+    if (isBinary) {
+      return this.http.get(apiUrl, { params, responseType: 'blob' }).pipe(
+        map((blob) => ({ success: true, blob, mimeType, filename })),
+        catchError((error) => of({ error: error.message || 'API query failed' }))
+      );
+    }
+
     return this.http.get(apiUrl, { params }).pipe(
       map((response) => ({ success: true, data: response })),
       catchError((error) => of({ error: error.message || 'API query failed' }))
