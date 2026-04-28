@@ -96,11 +96,18 @@ export class FeatureInfoMoreInfoHandler {
     const container = this.getFeatureInfoContainer(featureInfoControl);
     if (!container) return;
 
+    container.querySelectorAll('.sitmun-more-info-summary').forEach((summary: any) => {
+      summary.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+      });
+    });
+
     const links = container.querySelectorAll('.sitmun-more-info-link');
 
     links.forEach((link: any) => {
       link.addEventListener('click', (e: Event) => {
         e.preventDefault();
+        e.stopPropagation();
 
         const taskId = link.dataset['taskId'];
         const taskIndex = link.dataset['taskIndex'];
