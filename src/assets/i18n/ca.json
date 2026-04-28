@@ -179,5 +179,7 @@
   "common.filterHintSelectedApplicationAlwaysVisible": "L'aplicació seleccionada sempre roman visible",
   "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible",
   "moreInfo.show": "Veure contingut",
-  "moreInfo.hide": "Amagar contingut"
+  "moreInfo.hide": "Amagar contingut",
+  "moreInfo.openLink": "Obrir",
+  "moreInfo.downloadFile": "Descarregar"
 }

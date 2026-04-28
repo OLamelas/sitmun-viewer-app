@@ -179,5 +179,7 @@
   "common.filterHintSelectedApplicationAlwaysVisible": "L'aplicació seleccionada sempre roman visible",
   "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible",
   "moreInfo.show": "Veire eth contengut",
-  "moreInfo.hide": "Amagar eth contengut"
+  "moreInfo.hide": "Amagar eth contengut",
+  "moreInfo.openLink": "Dobrir",
+  "moreInfo.downloadFile": "Descargar"
 }

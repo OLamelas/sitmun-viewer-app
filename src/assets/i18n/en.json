@@ -241,5 +241,7 @@
   "systemInfo.closeErrorPanel": "Close",
   "common.button.close": "Close",
   "moreInfo.show": "Show content",
-  "moreInfo.hide": "Hide content"
+  "moreInfo.hide": "Hide content",
+  "moreInfo.openLink": "Open",
+  "moreInfo.downloadFile": "Download"
 }

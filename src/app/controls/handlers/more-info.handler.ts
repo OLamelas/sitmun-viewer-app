@@ -16,8 +16,7 @@ export class FeatureInfoMoreInfoHandler {
   constructor(
     private readonly moreInfoService: MoreInfoService,
     private readonly getAppConfig: () => AppCfg | null,
-    private readonly translateService: TranslateService,
-    private readonly showJsonResult?: (title: string, rows: any[]) => void
+    private readonly translateService: TranslateService
   ) {}
 
   injectMoreInfoFields(options: any): void {
@@ -103,6 +102,32 @@ export class FeatureInfoMoreInfoHandler {
         e.stopPropagation();
       });
     });
+
+    // Delegated listener for resource action buttons (.sitmun-resource-action).
+    // Uses capture phase ({ capture: true }) so it fires before SITNA's bubble-phase
+    // handlers can call stopPropagation and swallow the event.
+    container.addEventListener('click', (e: Event) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>('.sitmun-resource-action[data-action]');
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const action = target.dataset['action'];
+      const url = target.dataset['url'] ?? '';
+      const filename = target.dataset['filename'] ?? 'file';
+      if (action === 'open') {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else if (action === 'download') {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+      }
+    }, { capture: true });
 
     const links = container.querySelectorAll('.sitmun-more-info-link');
 
@@ -429,7 +454,11 @@ export class FeatureInfoMoreInfoHandler {
   private displayDirectUrlResult(result: any, task: any, placeholderId?: string): void {
     const html = this.renderDirectUrlHtml(result.directUrl, result.mimeType, result.filename);
     if (placeholderId) {
-      if (!this.updatePlaceholder(placeholderId, html)) {
+      const isImage = result.mimeType?.startsWith('image/');
+      const success = isImage
+        ? this.updatePlaceholder(placeholderId, html)
+        : this.replaceCollapsibleWithContent(placeholderId, html);
+      if (!success) {
         this.pendingResults.set(placeholderId, { task, result });
       }
       return;
@@ -437,70 +466,91 @@ export class FeatureInfoMoreInfoHandler {
     window.open(result.directUrl, '_blank');
   }
 
-  private static readonly MIME_TYPE_INFO: Record<string, { icon: string; label: string }> = {
-    'application/pdf':  { icon: '📄', label: 'PDF' },
-    'application/xml':  { icon: '📋', label: 'XML' },
-    'text/xml':         { icon: '📋', label: 'XML' },
-    'text/csv':         { icon: '📊', label: 'CSV' },
-    'application/msword':                                                          { icon: '📝', label: 'DOC' },
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':     { icon: '📝', label: 'DOCX' },
-    'application/vnd.ms-excel':                                                    { icon: '📊', label: 'XLS' },
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':           { icon: '📊', label: 'XLSX' },
-    'application/vnd.oasis.opendocument.text':                                     { icon: '📝', label: 'ODT' },
-    'application/vnd.oasis.opendocument.spreadsheet':                              { icon: '📊', label: 'ODS' },
+  private static readonly MIME_TYPE_INFO: Record<string, { label: string }> = {
+    'application/pdf':  { label: 'PDF' },
+    'application/xml':  { label: 'XML' },
+    'text/xml':         { label: 'XML' },
+    'text/csv':         { label: 'CSV' },
+    'application/msword':                                                          { label: 'DOC' },
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':     { label: 'DOCX' },
+    'application/vnd.ms-excel':                                                    { label: 'XLS' },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':           { label: 'XLSX' },
+    'application/vnd.oasis.opendocument.text':                                     { label: 'ODT' },
+    'application/vnd.oasis.opendocument.spreadsheet':                              { label: 'ODS' },
   };
 
-  private getMimeTypeInfo(mimeType: string): { icon: string; label: string } {
+  private getMimeTypeInfo(mimeType: string): { label: string } {
     const known = FeatureInfoMoreInfoHandler.MIME_TYPE_INFO[mimeType];
     if (known) return known;
-    // Generic fallback: extract the meaningful part of the subtype (e.g. 'zip' from 'application/zip',
-    // 'excel' from 'application/vnd.ms-excel', 'spreadsheet' from '...opendocument.spreadsheet')
     const subtype = mimeType.split('/')[1] ?? mimeType;
     const label = subtype.split(/[.+-]/).pop()?.toUpperCase() ?? 'File';
-    return { icon: '📎', label };
+    return { label };
+  }
+
+  private isBinaryBlobMimeType(mimeType: string): boolean {
+    return (
+      !mimeType.startsWith('image/') &&
+      mimeType !== 'application/json' &&
+      mimeType !== 'application/xml' &&
+      mimeType !== 'text/xml'
+    );
+  }
+
+  /**
+   * Renders a resource item with a plain-text label and action spans.
+   * Uses <span> instead of <a> to avoid SITNA's link icon decoration.
+   * Click handling is done via delegated listener in attachMoreInfoListeners.
+   * The download button is only shown when canDownload is true (blob URLs),
+   * since the download attribute is ignored for cross-origin URLs.
+   */
+  private renderFileActionsHtml(
+    name: string,
+    openUrl: string,
+    downloadUrl: string,
+    downloadFilename: string,
+    canDownload: boolean
+  ): string {
+    const openTitle = this.translateService.instant('moreInfo.openLink');
+    const downloadTitle = this.translateService.instant('moreInfo.downloadFile');
+    const actionStyle = 'style="cursor:pointer;user-select:none;"';
+    const downloadBtn = canDownload
+      ? '\u00a0<span class="sitmun-resource-action" role="button" tabindex="0" ' + actionStyle +
+          ' data-action="download" data-url="' + downloadUrl + '"' +
+          ' data-filename="' + this.escapeHtml(downloadFilename) + '"' +
+          ' title="' + this.escapeHtml(downloadTitle) + '">\u2B07\uFE0F</span>'
+      : '';
+    return (
+      '<span class="sitmun-resource-item">' +
+      '<span class="sitmun-resource-name">' + this.escapeHtml(name) + '</span>\u00a0' +
+      '<span class="sitmun-resource-action" role="button" tabindex="0" ' + actionStyle +
+        ' data-action="open" data-url="' + openUrl + '"' +
+        ' title="' + this.escapeHtml(openTitle) + '">\uD83D\uDD17</span>' +
+      downloadBtn +
+      '</span>'
+    );
   }
 
   private renderDirectUrlHtml(url: string, mimeType: string, filename: string | null): string {
     if (mimeType?.startsWith('image/')) {
       return '<img src="' + url + '" alt="" style="max-width:100%;height:auto;" />';
     }
-    const { icon, label } = this.getMimeTypeInfo(mimeType);
-    const linkText = this.escapeHtml(filename ?? label);
-    return (
-      icon + '\u00a0<a href="' + url + '" target="_blank">' + linkText + '</a>' +
-      '\u00a0<span class="sitmun-mime-label" style="font-size:0.85em;opacity:0.7;">(' + this.escapeHtml(label) + ')</span>'
-    );
+    const { label } = this.getMimeTypeInfo(mimeType);
+    const name = filename ?? label;
+    return this.renderFileActionsHtml(name, url, url, name, false);
   }
 
   private displayBlobResult(result: any, task: any, placeholderId?: string): void {
-    const html = this.renderBlobResult(result);
     if (placeholderId) {
-      if (!this.updatePlaceholder(placeholderId, html)) {
+      const html = this.renderBlobResult(result);
+      const success = this.isBinaryBlobMimeType(result.mimeType)
+        ? this.replaceCollapsibleWithContent(placeholderId, html)
+        : this.updatePlaceholder(placeholderId, html);
+      if (!success) {
         this.pendingResults.set(placeholderId, { task, result });
       }
       return;
     }
-    if (this.showJsonResult && result.mimeType === 'application/json') {
-      result.blob.text().then((text: string) => {
-        try {
-          const rows = normalizeMoreInfoRows(JSON.parse(text));
-          this.showJsonResult!(task?.name || 'More info', rows);
-        } catch {
-          alert(text);
-        }
-      });
-    } else if (this.showJsonResult && (result.mimeType === 'application/xml' || result.mimeType === 'text/xml')) {
-      result.blob.text().then((text: string) => {
-        const rows = normalizeXmlRows(text);
-        if (rows.length > 0) {
-          this.showJsonResult!(task?.name || 'More info', rows);
-        } else {
-          alert(text);
-        }
-      });
-    } else {
-      this.triggerBlobAction(result);
-    }
+    this.triggerBlobDownload(result);
   }
 
   private displayDataResult(data: any, task: any, placeholderId?: string): void {
@@ -510,10 +560,6 @@ export class FeatureInfoMoreInfoHandler {
       if (!this.updatePlaceholder(placeholderId, tableHtml)) {
         this.pendingResults.set(placeholderId, { task, result: { data } });
       }
-      return;
-    }
-    if (this.showJsonResult) {
-      this.showJsonResult(task?.name || 'More info', rows);
       return;
     }
     alert('More info:\n' + JSON.stringify(data, null, 2));
@@ -561,27 +607,20 @@ export class FeatureInfoMoreInfoHandler {
       return '<span data-blob-id="' + placeholderId + '">Carregant...</span>';
     }
 
-    // Binary / PDF / other: render a download link with icon and type label.
-    // The ⬇ suffix signals to the user that clicking will download the file.
+    // Binary / PDF / other: render open and download action icons.
     const objectUrl = URL.createObjectURL(result.blob);
-    const { icon, label } = this.getMimeTypeInfo(mimeType);
-    const name = this.escapeHtml(result.filename ?? label);
-    return (
-      icon + '\u00a0<a href="' + objectUrl + '" download="' + name + '">' + name + '</a>' +
-      '\u00a0<span class="sitmun-mime-label" style="font-size:0.85em;opacity:0.7;">(' + this.escapeHtml(label) + '\u00a0⬇)</span>'
-    );
+    const { label } = this.getMimeTypeInfo(mimeType);
+    const name = result.filename ?? label;
+    return this.renderFileActionsHtml(name, objectUrl, objectUrl, name, true);
   }
 
-  /** For non-placeholder display (interactive click): open or download the blob. */
-  private triggerBlobAction(result: { blob: Blob; mimeType: string; filename: string | null }): void {
-    const { mimeType } = result;
+  /** Fallback for non-placeholder blob results: open images/PDFs in new tab, download the rest. */
+  private triggerBlobDownload(result: { blob: Blob; mimeType: string; filename: string | null }): void {
     const objectUrl = URL.createObjectURL(result.blob);
-
-    if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+    if (result.mimeType.startsWith('image/') || result.mimeType === 'application/pdf') {
       window.open(objectUrl, '_blank');
       return;
     }
-
     const anchor = document.createElement('a');
     anchor.href = objectUrl;
     anchor.download = result.filename ?? 'document';
@@ -665,6 +704,26 @@ export class FeatureInfoMoreInfoHandler {
     return true;
   }
 
+  /**
+   * Replaces the parent .sitmun-more-info-collapsible <details> element
+   * (if present) with the given html, removing the Veure/Amaga wrapper.
+   * Falls back to updating innerHTML of the placeholder itself.
+   */
+  private replaceCollapsibleWithContent(placeholderId: string, html: string): boolean {
+    const placeholder = document.querySelector<HTMLElement>(
+      '[data-placeholder-id="' + placeholderId + '"]'
+    );
+    if (!placeholder) return false;
+
+    const collapsible = placeholder.closest<HTMLElement>('.sitmun-more-info-collapsible');
+    if (collapsible) {
+      collapsible.outerHTML = html;
+    } else {
+      placeholder.innerHTML = html;
+    }
+    return true;
+  }
+
   private flushPendingResults(container: HTMLElement): void {
     if (this.pendingResults.size === 0) return;
 
@@ -674,15 +733,29 @@ export class FeatureInfoMoreInfoHandler {
       );
       if (!element) return;
 
-      element.classList.remove('sitmun-more-info-loading');
       const result = payload.result;
       if (result?.error) {
+        element.classList.remove('sitmun-more-info-loading');
         element.innerHTML = this.escapeHtml('Error: ' + result.error);
       } else if (result?.directUrl) {
-        element.innerHTML = this.renderDirectUrlHtml(result.directUrl, result.mimeType, result.filename);
+        const html = this.renderDirectUrlHtml(result.directUrl, result.mimeType, result.filename);
+        const isImage = result.mimeType?.startsWith('image/');
+        if (!isImage) {
+          const collapsible = element.closest<HTMLElement>('.sitmun-more-info-collapsible');
+          if (collapsible) { collapsible.outerHTML = html; this.pendingResults.delete(id); return; }
+        }
+        element.classList.remove('sitmun-more-info-loading');
+        element.innerHTML = html;
       } else if (result?.blob) {
-        element.innerHTML = this.renderBlobResult(result);
+        const html = this.renderBlobResult(result);
+        if (this.isBinaryBlobMimeType(result.mimeType)) {
+          const collapsible = element.closest<HTMLElement>('.sitmun-more-info-collapsible');
+          if (collapsible) { collapsible.outerHTML = html; this.pendingResults.delete(id); return; }
+        }
+        element.classList.remove('sitmun-more-info-loading');
+        element.innerHTML = html;
       } else if (result?.data) {
+        element.classList.remove('sitmun-more-info-loading');
         const rows = normalizeMoreInfoRows(result.data);
         element.innerHTML = this.renderTableHtml(rows);
       }

@@ -240,5 +240,7 @@
   "systemInfo.closeErrorPanel": "Cerrar",
   "common.button.close": "Cerrar",
   "moreInfo.show": "Ver contenido",
-  "moreInfo.hide": "Ocultar contenido"
+  "moreInfo.hide": "Ocultar contenido",
+  "moreInfo.openLink": "Abrir",
+  "moreInfo.downloadFile": "Descargar"
 }
