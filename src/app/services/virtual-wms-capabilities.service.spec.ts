@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { TranslateService } from '@ngx-translate/core';
 
 import { AppCfg } from '@api/model/app-cfg';
 
@@ -27,6 +28,10 @@ describe('VirtualWmsCapabilitiesService', () => {
         ConfigLookupService,
         LayerInfoService,
         {
+          provide: TranslateService,
+          useValue: { instant: (k: string) => k }
+        },
+        {
           provide: LanguageService,
           useValue: { getCurrentLanguage: () => 'en' }
         }
@@ -53,7 +58,9 @@ describe('VirtualWmsCapabilitiesService', () => {
           id: 'layer-1',
           title: 'Layer 1',
           layers: ['wms-layer-1'],
-          service: 'service-1'
+          service: 'service-1',
+          metadataURL: 'https://example.com/metadata.xml',
+          datasetURL: 'https://example.com/data.zip'
         },
         {
           id: 'layer-2',
@@ -179,6 +186,25 @@ describe('VirtualWmsCapabilitiesService', () => {
       if (leafNode) {
         expect(leafNode.Name).toBeDefined();
       }
+    });
+
+    it('should emit MetadataURL and DataURL on leaf layers from profile', () => {
+      const capabilities = service.generateCapabilities('node-1', mockAppCfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf).toBeDefined();
+      expect(leaf!.MetadataURL).toEqual([
+        {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'https://example.com/metadata.xml' }
+        }
+      ]);
+      expect(leaf!.DataURL).toEqual([
+        {
+          Format: 'application/zip',
+          OnlineResource: { 'xlink:href': 'https://example.com/data.zip' }
+        }
+      ]);
     });
 
     it('should throw error for non-existent node', () => {

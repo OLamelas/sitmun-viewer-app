@@ -64,6 +64,10 @@ export interface AppLayer {
   maxScaleDenominator?: number;
   /** Layer transparency 0..100 (0 = opaque, 100 = fully transparent); omitted when unset. */
   transparency?: number;
+  /** OGC WMS Layer MetadataURL href (profile / cartography). */
+  metadataURL?: string;
+  /** OGC WMS Layer DataURL href (profile / cartography). */
+  datasetURL?: string;
 }
 
 export interface AppService {
@@ -100,6 +104,10 @@ export interface AppNodeInfo {
   isRadio: boolean;
   children: string[];
   order: number;
+  /** Optional folder-level metadata URL from tree node (client profile). */
+  metadataURL?: string;
+  /** Optional folder-level dataset URL from tree node (client profile). */
+  datasetURL?: string;
 }
 
 export interface AppGlobalConfiguration {

@@ -239,5 +239,11 @@
   "systemInfo.errorType.uncaught": "Uncaught Exception",
   "systemInfo.copyError": "Copy Error",
   "systemInfo.closeErrorPanel": "Close",
-  "common.button.close": "Close"
+  "common.button.close": "Close",
+  "layerCatalog.linkType.metadata": "Metadata",
+  "layerCatalog.linkType.download": "Download",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN"
 }

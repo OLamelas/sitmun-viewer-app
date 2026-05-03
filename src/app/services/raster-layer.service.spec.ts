@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { TranslateService } from '@ngx-translate/core';
 
 import { AppCfg } from '@api/model/app-cfg';
 
@@ -12,6 +13,7 @@ import { WMSCapabilities, WMSLayer } from '../types/wms-capabilities';
 describe('RasterLayerService', () => {
   let service: RasterLayerService;
   let virtualWms: VirtualWmsCapabilitiesService;
+  let configLookup: ConfigLookupService;
 
   const minimalAppCfg = (): AppCfg => ({
     application: {
@@ -46,6 +48,18 @@ describe('RasterLayerService', () => {
     trees: []
   });
 
+  const translateInstant = (key: string): string =>
+    (
+      ({
+        'layerCatalog.linkType.metadata': 'Metadata',
+        'layerCatalog.linkType.download': 'Download',
+        'layerCatalog.linkType.format.text_html': 'HTML',
+        'layerCatalog.linkType.format.application_zip': 'ZIP',
+        'layerCatalog.linkType.format.application_octet-stream': 'BIN',
+        'layerCatalog.linkType.format.text_xml': 'XML'
+      }) as Record<string, string>
+    )[key] ?? key;
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -54,6 +68,10 @@ describe('RasterLayerService', () => {
         ConfigLookupService,
         LayerInfoService,
         {
+          provide: TranslateService,
+          useValue: { instant: translateInstant }
+        },
+        {
           provide: LanguageService,
           useValue: { getCurrentLanguage: () => 'en' }
         }
@@ -61,6 +79,7 @@ describe('RasterLayerService', () => {
     });
     service = TestBed.inject(RasterLayerService);
     virtualWms = TestBed.inject(VirtualWmsCapabilitiesService);
+    configLookup = TestBed.inject(ConfigLookupService);
   });
 
   it('should be created', () => {
@@ -194,6 +213,158 @@ describe('RasterLayerService', () => {
       expect(service.isRasterWms({ type: 'WMTS' }, 'http://x', minimalAppCfg())).toBe(
         false
       );
+    });
+  });
+
+  describe('enrichRasterLayerInfo', () => {
+    const enrichAppCfg = (overrides?: {
+      layerMeta?: string;
+      layerData?: string;
+    }): AppCfg => ({
+      ...minimalAppCfg(),
+      layers: [
+        {
+          id: 'layer/10',
+          title: 'L1',
+          layers: ['ns:roads'],
+          service: 'S1',
+          ...(overrides?.layerMeta != null
+            ? { metadataURL: overrides.layerMeta }
+            : {}),
+          ...(overrides?.layerData != null
+            ? { datasetURL: overrides.layerData }
+            : {})
+        }
+      ],
+      trees: [
+        {
+          id: 'tree/1',
+          title: 'T',
+          image: null,
+          rootNode: 'node/1',
+          nodes: {
+            'node/2': {
+              title: 'Leaf',
+              resource: 'layer/10',
+              isRadio: false,
+              children: [],
+              order: 1
+            }
+          }
+        }
+      ]
+    });
+
+    const upstreamCaps = (): WMSCapabilities =>
+      ({
+        version: '1.3.0',
+        Service: { Name: 'WMS', Title: 'S' },
+        Capability: {
+          Request: {} as any,
+          Exception: { Format: ['XML'] },
+          Layer: {
+            Title: 'root',
+            Layer: [
+              {
+                Name: 'ns:roads',
+                Title: 'roads',
+                MetadataURL: [
+                  {
+                    Format: 'text/xml',
+                    OnlineResource: {
+                      'xlink:href': 'https://upstream.example/metadata'
+                    }
+                  }
+                ],
+                DataURL: [
+                  {
+                    Format: 'application/zip',
+                    OnlineResource: {
+                      'xlink:href': 'https://upstream.example/data.zip'
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }) as WMSCapabilities;
+
+    it('uses profile metadataURL and datasetURL over upstream', () => {
+      configLookup.initialize(
+        enrichAppCfg({
+          layerMeta: 'https://profile.example/md',
+          layerData: 'https://profile.example/d.zip'
+        })
+      );
+      const info = service.enrichRasterLayerInfo(
+        'node/2',
+        {
+          url: 'https://wms.example/wms',
+          type: 'WMS',
+          layerNames: ['ns:roads']
+        },
+        upstreamCaps()
+      );
+      expect(info.metadata?.[0]?.url).toBe('https://profile.example/md');
+      expect(info.dataUrl?.[0]?.url).toBe('https://profile.example/d.zip');
+      expect(info.metadata?.[0]?.format).toBe('text/html');
+      expect(info.dataUrl?.[0]?.format).toBe('application/zip');
+    });
+
+    it('suppresses upstream links when profile fields are explicitly empty', () => {
+      configLookup.initialize(
+        enrichAppCfg({
+          layerMeta: '',
+          layerData: ''
+        })
+      );
+      const info = service.enrichRasterLayerInfo(
+        'node/2',
+        {
+          url: 'https://wms.example/wms',
+          type: 'WMS',
+          layerNames: ['ns:roads']
+        },
+        upstreamCaps()
+      );
+      expect(info.metadata).toBeUndefined();
+      expect(info.dataUrl).toBeUndefined();
+    });
+
+    it('suppresses upstream links and blank entries when profile fields are whitespace', () => {
+      configLookup.initialize(
+        enrichAppCfg({
+          layerMeta: '   ',
+          layerData: '   '
+        })
+      );
+      const info = service.enrichRasterLayerInfo(
+        'node/2',
+        {
+          url: 'https://wms.example/wms',
+          type: 'WMS',
+          layerNames: ['ns:roads']
+        },
+        upstreamCaps()
+      );
+      expect(info.metadata).toEqual([]);
+      expect(info.dataUrl).toEqual([]);
+    });
+
+    it('falls back to upstream MetadataURL and DataURL when profile omits them', () => {
+      configLookup.initialize(enrichAppCfg());
+      const info = service.enrichRasterLayerInfo(
+        'node/2',
+        {
+          url: 'https://wms.example/wms',
+          type: 'WMS',
+          layerNames: ['ns:roads']
+        },
+        upstreamCaps()
+      );
+      expect(info.metadata?.[0]?.url).toBe('https://upstream.example/metadata');
+      expect(info.dataUrl?.[0]?.url).toBe('https://upstream.example/data.zip');
     });
   });
 });

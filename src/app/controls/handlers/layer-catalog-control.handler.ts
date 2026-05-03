@@ -8,6 +8,7 @@ import { RasterLayerService } from '../../services/raster-layer.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
 import { VirtualWmsCapabilitiesService } from '../../services/virtual-wms-capabilities.service';
 import type { Meld, MeldJoinPoint } from '../../types/meld.types';
+import { ensureLayerCatalogInfoAffordance } from './layer-catalog-info-affordance';
 import { ControlHandlerBase } from '../control-handler-base';
 import {
   BootstrapEligibilityOptions,
@@ -1098,8 +1099,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
           const isVirtualByNodeId = !!nodeIdFromOptions;
 
           if (!isVirtualByUrl && !isVirtualByNodeId) {
-            // Not a virtual layer, proceed with original getInfo
-            return joinPoint.proceed();
+            return ensureLayerCatalogInfoAffordance(joinPoint.proceed());
           }
 
           // For virtual layers, use nodeId from options if available, otherwise use name parameter
@@ -1152,7 +1152,10 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             originalInfo && typeof originalInfo === 'object'
               ? originalInfo
               : {};
-          return { ...originalInfoObj, ...enrichedInfo };
+          return ensureLayerCatalogInfoAffordance({
+            ...originalInfoObj,
+            ...enrichedInfo
+          });
         }
       );
 

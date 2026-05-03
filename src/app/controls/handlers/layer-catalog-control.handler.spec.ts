@@ -1,5 +1,6 @@
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { TranslateService } from '@ngx-translate/core';
 
 import { AppCfg, AppTasks, AppTree, AppNodeInfo } from '@api/model/app-cfg';
 
@@ -76,6 +77,10 @@ describe('LayerCatalogControlHandler', () => {
         },
         { provide: ConfigLookupService, useValue: mockConfigLookup },
         { provide: LanguageService, useValue: mockLanguageService },
+        {
+          provide: TranslateService,
+          useValue: { instant: (k: string) => k }
+        },
         { provide: AppConfigService, useValue: mockAppConfigService }
       ]
     });

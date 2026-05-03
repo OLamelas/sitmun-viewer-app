@@ -3,6 +3,14 @@
  * Based on OGC WMS 1.3.0 specification.
  */
 
+/** OGC MetadataURL / DataURL entry (parsed capabilities). */
+export interface WmsOnlineResourceLink {
+  Format?: string;
+  OnlineResource?: {
+    'xlink:href'?: string;
+  };
+}
+
 /**
  * WMS Layer definition from GetCapabilities response
  */
@@ -105,6 +113,12 @@ export interface WMSLayer {
       };
     };
   };
+
+  /** OGC WMS Layer MetadataURL (single or repeated). */
+  MetadataURL?: WmsOnlineResourceLink | WmsOnlineResourceLink[];
+
+  /** OGC WMS Layer DataURL (single or repeated). */
+  DataURL?: WmsOnlineResourceLink | WmsOnlineResourceLink[];
 }
 
 /**

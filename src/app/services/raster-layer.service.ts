@@ -4,7 +4,7 @@ import { AppCfg, AppLayer, AppService } from '@api/model/app-cfg';
 
 import { ConfigLookupService } from './config-lookup.service';
 import { LanguageService } from './language.service';
-import { LayerInfoService } from './layer-info.service';
+import { inferOgcLinkFormat, LayerInfoService } from './layer-info.service';
 import {
   VirtualWmsCapabilitiesService,
   RealLayerConfig
@@ -646,32 +646,90 @@ export class RasterLayerService {
       enrichedInfo.url = realLayerConfig.url;
     }
 
-    // Metadata: from layer.metadataUrl (if available in app config)
-    if (layerConfig && (layerConfig as any).metadataUrl) {
-      const metadataUrls = Array.isArray((layerConfig as any).metadataUrl)
-        ? (layerConfig as any).metadataUrl
-        : [(layerConfig as any).metadataUrl];
+    // Metadata: from profile (metadataURL; legacy metadataUrl for hand-edited JSON).
+    // If the profile field is present it replaces upstream MetadataURL, even when empty.
+    const hasProfileMetadataURL =
+      !!layerConfig &&
+      (Object.prototype.hasOwnProperty.call(layerConfig, 'metadataURL') ||
+        Object.prototype.hasOwnProperty.call(layerConfig, 'metadataUrl'));
+    const profileMetadataRaw =
+      layerConfig &&
+      (layerConfig.metadataURL ?? (layerConfig as { metadataUrl?: string }).metadataUrl);
+    if (layerConfig && profileMetadataRaw) {
+      const metadataUrls = Array.isArray(profileMetadataRaw)
+        ? profileMetadataRaw
+        : [profileMetadataRaw];
 
-      enrichedInfo.metadata = metadataUrls.map((md: any) => ({
-        format: md.format || 'text/html',
-        type: md.type || 'simple',
-        url: typeof md === 'string' ? md : md.url,
-        formatDescription: md.formatDescription || 'Metadata'
-      }));
+      enrichedInfo.metadata = metadataUrls.map((md: unknown) => {
+        const url =
+          typeof md === 'string'
+            ? md.trim()
+            : String((md as { url?: string }).url ?? '').trim();
+        const formatStr =
+          typeof md === 'object' && md !== null && 'format' in md
+            ? inferOgcLinkFormat(
+                'metadata',
+                url,
+                String((md as { format?: string }).format ?? '')
+              )
+            : inferOgcLinkFormat('metadata', url);
+        const explicitFd =
+          typeof md === 'object' && md !== null && 'formatDescription' in md
+            ? String((md as { formatDescription?: string }).formatDescription ?? '')
+            : '';
+        return {
+          format: formatStr,
+          type:
+            typeof md === 'object' && md !== null && 'type' in md
+              ? String((md as { type?: string }).type || 'simple')
+              : 'simple',
+          url,
+          formatDescription:
+            explicitFd ||
+            this.layerInfoService.describeOgcLinkFormat('metadata', formatStr)
+        };
+      }).filter((md: { url: string }) => md.url.length > 0);
     }
 
-    // DataUrl: from layer.datasetURL (if available in app config)
-    if (layerConfig && (layerConfig as any).datasetURL) {
-      const dataUrls = Array.isArray((layerConfig as any).datasetURL)
-        ? (layerConfig as any).datasetURL
-        : [(layerConfig as any).datasetURL];
+    // DataUrl: from profile datasetURL. If present it replaces upstream DataURL, even when empty.
+    const hasProfileDatasetURL =
+      !!layerConfig &&
+      Object.prototype.hasOwnProperty.call(layerConfig, 'datasetURL');
+    const profileDatasetRaw = layerConfig?.datasetURL as unknown;
+    if (layerConfig && profileDatasetRaw) {
+      const dataUrls = Array.isArray(profileDatasetRaw)
+        ? profileDatasetRaw
+        : [profileDatasetRaw];
 
-      enrichedInfo.dataUrl = dataUrls.map((du: any) => ({
-        format: du.format || 'application/zip',
-        type: du.type || 'simple',
-        url: typeof du === 'string' ? du : du.url,
-        formatDescription: du.formatDescription || 'Download'
-      }));
+      enrichedInfo.dataUrl = dataUrls.map((du: unknown) => {
+        const url =
+          typeof du === 'string'
+            ? du.trim()
+            : String((du as { url?: string }).url ?? '').trim();
+        const formatStr =
+          typeof du === 'object' && du !== null && 'format' in du
+            ? inferOgcLinkFormat(
+                'download',
+                url,
+                String((du as { format?: string }).format ?? '')
+              )
+            : inferOgcLinkFormat('download', url);
+        const explicitFd =
+          typeof du === 'object' && du !== null && 'formatDescription' in du
+            ? String((du as { formatDescription?: string }).formatDescription ?? '')
+            : '';
+        return {
+          format: formatStr,
+          type:
+            typeof du === 'object' && du !== null && 'type' in du
+              ? String((du as { type?: string }).type || 'simple')
+              : 'simple',
+          url,
+          formatDescription:
+            explicitFd ||
+            this.layerInfoService.describeOgcLinkFormat('download', formatStr)
+        };
+      }).filter((du: { url: string }) => du.url.length > 0);
     }
 
     // Contact information: from app config
@@ -737,6 +795,24 @@ export class RasterLayerService {
             if (abstractText) {
               enrichedInfo.abstract = abstractText;
             }
+          }
+
+          const ogcLinks = this.layerInfoService.extractOgcMetadataAndDataUrls(
+            wmsLayer as WMSLayer
+          );
+          if (
+            !hasProfileMetadataURL &&
+            (!enrichedInfo.metadata || enrichedInfo.metadata.length === 0) &&
+            ogcLinks.metadata.length > 0
+          ) {
+            enrichedInfo.metadata = ogcLinks.metadata;
+          }
+          if (
+            !hasProfileDatasetURL &&
+            (!enrichedInfo.dataUrl || enrichedInfo.dataUrl.length === 0) &&
+            ogcLinks.dataUrl.length > 0
+          ) {
+            enrichedInfo.dataUrl = ogcLinks.dataUrl;
           }
         }
       }

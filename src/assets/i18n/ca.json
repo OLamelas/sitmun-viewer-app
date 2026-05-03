@@ -177,5 +177,11 @@
   "territory.description": "Descripció",
   "territory.descriptionMissing": "Cap descripció",
   "common.filterHintSelectedApplicationAlwaysVisible": "L'aplicació seleccionada sempre roman visible",
-  "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible"
+  "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible",
+  "layerCatalog.linkType.metadata": "Metadades",
+  "layerCatalog.linkType.download": "Descàrrega",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN"
 }

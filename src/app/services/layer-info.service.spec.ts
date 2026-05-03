@@ -1,10 +1,31 @@
+import { TestBed } from '@angular/core/testing';
+import { TranslateService } from '@ngx-translate/core';
+
 import { LayerInfoService } from './layer-info.service';
 
 describe('LayerInfoService', () => {
   let service: LayerInfoService;
 
+  const translateInstant = (key: string): string =>
+    (
+      ({
+        'layerCatalog.linkType.metadata': 'Metadata',
+        'layerCatalog.linkType.download': 'Download',
+        'layerCatalog.linkType.format.text_xml': 'XML',
+        'layerCatalog.linkType.format.text_html': 'HTML',
+        'layerCatalog.linkType.format.application_zip': 'ZIP',
+        'layerCatalog.linkType.format.application_octet-stream': 'BIN'
+      }) as Record<string, string>
+    )[key] ?? key;
+
   beforeEach(() => {
-    service = new LayerInfoService();
+    TestBed.configureTestingModule({
+      providers: [
+        LayerInfoService,
+        { provide: TranslateService, useValue: { instant: translateInstant } }
+      ]
+    });
+    service = TestBed.inject(LayerInfoService);
   });
 
   describe('extractLanguageAwareText', () => {
@@ -56,6 +77,76 @@ describe('LayerInfoService', () => {
       expect(service.extractLanguageAwareText(textField, 'de-DE')).toBe(
         'English'
       );
+    });
+  });
+
+  describe('describeOgcLinkFormat', () => {
+    it('uses generic labels when format is unknown (empty)', () => {
+      expect(service.describeOgcLinkFormat('metadata', '')).toBe('Metadata');
+      expect(service.describeOgcLinkFormat('download', '   ')).toBe('Download');
+    });
+
+    it('uses MIME-specific label when format matches i18n', () => {
+      expect(service.describeOgcLinkFormat('metadata', 'text/xml')).toBe(
+        'XML'
+      );
+    });
+  });
+
+  describe('extractOgcMetadataAndDataUrls', () => {
+    it('returns empty arrays when layer is undefined', () => {
+      expect(service.extractOgcMetadataAndDataUrls(undefined)).toEqual({
+        metadata: [],
+        dataUrl: []
+      });
+    });
+
+    it('maps single MetadataURL and DataURL', () => {
+      const out = service.extractOgcMetadataAndDataUrls({
+        Title: 'L',
+        MetadataURL: {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'https://md.example/x' }
+        },
+        DataURL: {
+          Format: 'application/zip',
+          OnlineResource: { 'xlink:href': 'https://data.example/z.zip' }
+        }
+      });
+      expect(out.metadata).toEqual([
+        {
+          url: 'https://md.example/x',
+          format: 'text/xml',
+          type: 'simple',
+          formatDescription: 'XML'
+        }
+      ]);
+      expect(out.dataUrl).toEqual([
+        {
+          url: 'https://data.example/z.zip',
+          format: 'application/zip',
+          type: 'simple',
+          formatDescription: 'ZIP'
+        }
+      ]);
+    });
+
+    it('maps arrays and skips entries without href', () => {
+      const out = service.extractOgcMetadataAndDataUrls({
+        Title: 'L',
+        MetadataURL: [
+          { Format: 'text/html', OnlineResource: {} },
+          { OnlineResource: { 'xlink:href': '  https://ok  ' } }
+        ]
+      });
+      expect(out.metadata).toEqual([
+        {
+          url: 'https://ok',
+          format: 'text/html',
+          type: 'simple',
+          formatDescription: 'HTML'
+        }
+      ]);
     });
   });
 });

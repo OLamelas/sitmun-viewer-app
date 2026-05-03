@@ -8,11 +8,13 @@ import {
   AppTree
 } from '@api/model/app-cfg';
 
+import { inferOgcLinkFormat } from './layer-info.service';
 import {
   WMSCapabilities,
   WMSCapability,
   WMSService,
-  WMSLayer
+  WMSLayer,
+  WmsOnlineResourceLink
 } from '../types/wms-capabilities';
 
 /**
@@ -590,6 +592,10 @@ export class VirtualWmsCapabilitiesService {
           (s) => s.id === appLayer.service
         );
         layer.CRS = this.getLayerCRS(appLayer, service, defaultCRS);
+        VirtualWmsCapabilitiesService.appendProfileOgcUrlsToLayer(
+          layer,
+          appLayer
+        );
       } else {
         // Return null to exclude node from capabilities tree
         return null;
@@ -600,6 +606,31 @@ export class VirtualWmsCapabilitiesService {
     }
 
     return layer;
+  }
+
+  /**
+   * Adds OGC WMS Layer {@code MetadataURL} / {@code DataURL} from profile cartography when set.
+   */
+  private static appendProfileOgcUrlsToLayer(
+    layer: WMSLayer,
+    appLayer: AppLayer
+  ): void {
+    const md = appLayer.metadataURL?.trim();
+    const du = appLayer.datasetURL?.trim();
+    if (md) {
+      const entry: WmsOnlineResourceLink = {
+        Format: inferOgcLinkFormat('metadata', md),
+        OnlineResource: { 'xlink:href': md }
+      };
+      layer.MetadataURL = [entry];
+    }
+    if (du) {
+      const entry: WmsOnlineResourceLink = {
+        Format: inferOgcLinkFormat('download', du),
+        OnlineResource: { 'xlink:href': du }
+      };
+      layer.DataURL = [entry];
+    }
   }
 
   /**

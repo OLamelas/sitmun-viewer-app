@@ -176,5 +176,11 @@
   "territory.descriptionMissing": "Aucune description",
   "genericPrivateHeaders.changeAppOrTerritory": "Changer d'application ou de territoire",
   "common.filterHintSelectedApplicationAlwaysVisible": "L'application sélectionnée reste toujours visible",
-  "common.filterHintSelectedTerritoryAlwaysVisible": "Le territoire sélectionné reste toujours visible"
+  "common.filterHintSelectedTerritoryAlwaysVisible": "Le territoire sélectionné reste toujours visible",
+  "layerCatalog.linkType.metadata": "Métadonnées",
+  "layerCatalog.linkType.download": "Téléchargement",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN"
 }
