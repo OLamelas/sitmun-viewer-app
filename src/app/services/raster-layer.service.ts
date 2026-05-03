@@ -9,12 +9,11 @@ import {
   VirtualWmsCapabilitiesService,
   RealLayerConfig
 } from './virtual-wms-capabilities.service';
-import { WMSCapabilities } from '../types/wms-capabilities';
+import { WMSCapabilities, WMSLayer } from '../types/wms-capabilities';
 
 /**
  * Service for Raster layer-specific functionality.
  * Handles WMTS normalization, Raster-specific information extraction, and capabilities processing.
- * TODO: Add unit tests (raster-layer.service.spec.ts)
  */
 @Injectable({
   providedIn: 'root'
@@ -33,30 +32,29 @@ export class RasterLayerService {
    * @param appCfg - Optional app configuration (for virtual service detection)
    * @returns true if the layer is a Raster that will build a WMTS, false otherwise
    */
-  isRasterWmts(
-    layer: { [key: string]: unknown },
-    capabilitiesUrl?: string,
-    appCfg?: AppCfg
-  ): boolean {
-    // Check if layer is a Raster type
+  /**
+   * Check if layer instance is a Raster type (WMS, WMTS, or Raster constructor).
+   */
+  private isRasterLayer(layer: { [key: string]: unknown }): boolean {
     const layerType = (layer as any)['type'];
-    const isRaster =
+    return (
       layerType === 'WMS' ||
       layerType === 'WMTS' ||
       (layer as any).constructor?.name === 'Raster' ||
-      (layer as any).__proto__?.constructor?.name === 'Raster';
+      (layer as any).__proto__?.constructor?.name === 'Raster'
+    );
+  }
 
-    if (!isRaster) {
-      return false;
-    }
+  /**
+   * Resolve the service type for a layer, considering virtual URL resolution.
+   */
+  private resolveServiceType(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): string | undefined {
+    const layerType = (layer as any)['type'];
 
-    // Check service type
-    // 1. Direct check from layer.type property
-    if (layerType === 'WMTS') {
-      return true;
-    }
-
-    // 2. For virtual services, resolve the real service type
     if (
       capabilitiesUrl &&
       appCfg &&
@@ -69,15 +67,46 @@ export class RasterLayerService {
           nodeId,
           appCfg
         );
-        if (realLayerConfig && realLayerConfig.type === 'WMTS') {
-          return true;
+        if (realLayerConfig) {
+          return realLayerConfig.type;
         }
       }
     }
 
-    // 3. Try to get service type from layer options or properties
-    const serviceType =
-      (layer as any).options?.type || (layer as any).serviceType || layerType;
+    return (
+      (layer as any).options?.type ||
+      (layer as any).serviceType ||
+      layerType
+    );
+  }
+
+  /**
+   * True when the layer is a Raster backed by WMS (direct, virtual-resolved, or options.type).
+   */
+  isRasterWms(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): boolean {
+    if (!this.isRasterLayer(layer)) {
+      return false;
+    }
+    const serviceType = this.resolveServiceType(layer, capabilitiesUrl, appCfg);
+    return serviceType === 'WMS';
+  }
+
+  /**
+   * True when the layer is a Raster backed by WMTS.
+   */
+  isRasterWmts(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): boolean {
+    if (!this.isRasterLayer(layer)) {
+      return false;
+    }
+    const serviceType = this.resolveServiceType(layer, capabilitiesUrl, appCfg);
     return serviceType === 'WMTS';
   }
 
@@ -153,30 +182,336 @@ export class RasterLayerService {
   }
 
   /**
-   * Process capabilities result for WMTS Raster layers.
-   * If the layer is a Raster that will build WMTS, normalizes BoundingBox for all layers.
+   * Post-process **synthetic** virtual WMS GetCapabilities: merges profile scale denominators onto
+   * leaf {@link WMSLayer} entries (node-id based). Does not run for real service URLs; use
+   * {@link RasterLayerService#processWmtCapabilitiesResult} after HTTP fetch instead.
+   */
+  applyVirtualCatalogProfileScaleDenominators(
+    capabilities: unknown,
+    appCfg: AppCfg
+  ): unknown {
+    this.applyProfileScaleDenominatorsToWmsCapabilities(capabilities, appCfg);
+    return capabilities;
+  }
+
+  /**
+   * Process **real** fetched GetCapabilities for Raster layers (non-virtual URLs only).
+   * WMTS: normalizes BoundingBox; WMS/WMTS: merges profile denominators when the layer maps to an
+   * {@link AppService} in {@link AppCfg} (prefer {@code layer.options.serviceId} for proxy URLs).
    *
    * @param layer - The layer instance
-   * @param capabilitiesUrl - The capabilities URL
+   * @param capabilitiesUrl - The capabilities URL (must not be {@code virtual://…})
    * @param capabilities - The capabilities result object
-   * @param appCfg - Optional app configuration (for virtual service detection)
-   * @returns The processed capabilities result (normalized if WMTS, original otherwise)
+   * @param appCfg - App configuration
+   * @returns The processed capabilities result (modified in place when applicable)
    */
-  processWmtsCapabilitiesResult(
+  processWmtCapabilitiesResult(
     layer: { [key: string]: unknown },
     capabilitiesUrl: string | undefined,
     capabilities: unknown,
     appCfg?: AppCfg
   ): unknown {
+    if (
+      !capabilitiesUrl ||
+      !capabilities ||
+      this.virtualWmsService.isVirtualServiceUrl(capabilitiesUrl)
+    ) {
+      return capabilities;
+    }
+
     const isRasterWmts = this.isRasterWmts(layer, capabilitiesUrl, appCfg);
+    const isRasterWms = this.isRasterWms(layer, capabilitiesUrl, appCfg);
 
     if (isRasterWmts) {
-      // Normalize BoundingBox for all layers in WMTS capabilities
       this.normalizeAllWmtsLayersBoundingBox(capabilities);
     }
 
-    // Return the capabilities (modified in place if WMTS, original otherwise)
+    if (!appCfg) {
+      return capabilities;
+    }
+
+    const matchedService = this.resolveConfiguredServiceForCapabilities(
+      layer,
+      capabilitiesUrl,
+      appCfg
+    );
+
+    if (matchedService && (isRasterWms || isRasterWmts)) {
+      this.applyConfiguredProfileScaleDenominators(
+        capabilities,
+        appCfg,
+        matchedService.id,
+        isRasterWms,
+        isRasterWmts
+      );
+    }
+
     return capabilities;
+  }
+
+  /**
+   * Resolve {@link AppService} for this capabilities fetch: primary {@code options.serviceId}
+   * (or legacy {@code options.service} when it equals an AppCfg service id), else URL match.
+   */
+  private resolveConfiguredServiceForCapabilities(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl: string,
+    appCfg: AppCfg
+  ): AppService | undefined {
+    const opts = (layer as { options?: Record<string, unknown> }).options;
+    const fromOpts = opts?.['serviceId'] ?? opts?.['service'];
+    if (typeof fromOpts === 'string' && fromOpts.length > 0) {
+      const byId = appCfg.services.find((s) => s.id === fromOpts);
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const normalizeUrl = (u: string): string =>
+      u
+        .trim()
+        .replace(/\/+$/, '')
+        .split('?')[0]
+        .toLowerCase();
+
+    // Try URLs in order of preference
+    const layerUrl = (layer as { url?: unknown }).url;
+    const optUrl = opts?.['url'];
+    const candidates = [
+      capabilitiesUrl,
+      typeof layerUrl === 'string' ? layerUrl : null,
+      typeof optUrl === 'string' ? optUrl : null
+    ].filter((u): u is string => Boolean(u));
+
+    for (const raw of candidates) {
+      const normalized = normalizeUrl(raw);
+      if (normalized) {
+        const match = appCfg.services.find(
+          (s) => normalizeUrl(String(s.url ?? '')) === normalized
+        );
+        if (match) {
+          return match;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Apply configured scale denominators to capabilities for a matched service.
+   * Delegates to WMS or WMTS applier based on capabilities structure and layer type.
+   */
+  private applyConfiguredProfileScaleDenominators(
+    capabilities: unknown,
+    appCfg: AppCfg,
+    serviceId: string,
+    isRasterWms: boolean,
+    isRasterWmts: boolean
+  ): void {
+    const wmsRoot = (capabilities as WMSCapabilities | undefined)?.Capability
+      ?.Layer;
+    if (isRasterWms && wmsRoot) {
+      this.applyRealWmsProfileScaleDenominators(
+        capabilities,
+        serviceId,
+        appCfg
+      );
+    }
+
+    const wmtsLayers = (
+      capabilities as {
+        Contents?: { Layer?: unknown[] };
+      }
+    )?.Contents?.Layer;
+    if (isRasterWmts && Array.isArray(wmtsLayers)) {
+      this.applyRealWmtsProfileScaleDenominators(
+        capabilities,
+        serviceId,
+        appCfg
+      );
+    }
+  }
+
+  /**
+   * Check if a WMS layer name matches a configured layer name.
+   * Handles namespaced layer names (e.g., "workspace:layer" matches "layer").
+   */
+  private wmsLayerNameMatchesConfiguredName(
+    wmsName: string,
+    configuredName: string
+  ): boolean {
+    const ln = configuredName.trim();
+    if (!ln || !wmsName) {
+      return false;
+    }
+    return (
+      wmsName === ln ||
+      wmsName.endsWith(`:${ln}`) ||
+      ln === wmsName.split(':').pop()
+    );
+  }
+
+  /**
+   * Apply scale denominators to real WMS capabilities by matching layer names.
+   * Walks the WMS layer tree and applies scales from AppLayers that reference this service.
+   */
+  private applyRealWmsProfileScaleDenominators(
+    capabilities: unknown,
+    serviceId: string,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as WMSCapabilities | null | undefined;
+    const root = caps?.Capability?.Layer;
+    if (!root) {
+      return;
+    }
+    const appLayersForService = appCfg.layers.filter(
+      (l) => l.service === serviceId
+    );
+    const visit = (ly: WMSLayer): void => {
+      const name = ly.Name;
+      if (typeof name === 'string' && name.length > 0) {
+        for (const appLayer of appLayersForService) {
+          const matched = (appLayer.layers ?? []).some((ln) =>
+            this.wmsLayerNameMatchesConfiguredName(name, ln)
+          );
+          if (matched) {
+            if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+              ly.MinScaleDenominator = appLayer.minScaleDenominator;
+            }
+            if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+              ly.MaxScaleDenominator = appLayer.maxScaleDenominator;
+            }
+            break;
+          }
+        }
+      }
+      const children = ly.Layer;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          visit(child);
+        }
+      }
+    };
+    visit(root);
+  }
+
+  /**
+   * Apply scale denominators to real WMTS capabilities by matching identifiers.
+   * Filters to AppLayers that reference this service, then matches WMTS layer identifiers.
+   */
+  private applyRealWmtsProfileScaleDenominators(
+    capabilities: unknown,
+    serviceId: string,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as {
+      Contents?: { Layer?: Array<Record<string, unknown>> };
+    };
+    const layers = caps?.Contents?.Layer;
+    if (!Array.isArray(layers)) {
+      return;
+    }
+    this.ensureConfigLookupInitialized(appCfg);
+    for (const wmtsLayer of layers) {
+      const rawId = wmtsLayer['Identifier'];
+      const identifier =
+        typeof rawId === 'string'
+          ? rawId
+          : rawId &&
+              typeof rawId === 'object' &&
+              rawId !== null &&
+              'value' in (rawId as object)
+            ? String((rawId as { value?: unknown }).value ?? '')
+            : String(rawId ?? '');
+      const appLayer = this.findAppLayerForWmtsIdentifier(
+        identifier,
+        appCfg,
+        serviceId
+      );
+      if (!appLayer) {
+        continue;
+      }
+      if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+        wmtsLayer['MinScaleDenominator'] = appLayer.minScaleDenominator;
+      }
+      if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+        wmtsLayer['MaxScaleDenominator'] = appLayer.maxScaleDenominator;
+      }
+    }
+  }
+
+  private ensureConfigLookupInitialized(appCfg: AppCfg): void {
+    if (!this.configLookup.isReady()) {
+      this.configLookup.initialize(appCfg);
+    }
+  }
+
+  /**
+   * Check if a value is a valid scale denominator (positive finite number).
+   */
+  private isPositiveFiniteDenominator(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+
+  /**
+   * Walk WMS Capability.Layer tree and set MinScaleDenominator / MaxScaleDenominator from
+   * {@link AppCfg} for leaf layers whose {@link WMSLayer#Name} is a catalog node id with a resource.
+   */
+  private applyProfileScaleDenominatorsToWmsCapabilities(
+    capabilities: unknown,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as WMSCapabilities | null | undefined;
+    const root = caps?.Capability?.Layer;
+    if (!root) {
+      return;
+    }
+    this.ensureConfigLookupInitialized(appCfg);
+    const visit = (ly: WMSLayer): void => {
+      const name = ly.Name;
+      if (typeof name === 'string' && name.length > 0) {
+        const node = this.configLookup.findNode(name);
+        if (node?.resource) {
+          const appLayer = appCfg.layers.find((l) => l.id === node.resource);
+          if (appLayer) {
+            if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+              ly.MinScaleDenominator = appLayer.minScaleDenominator;
+            }
+            if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+              ly.MaxScaleDenominator = appLayer.maxScaleDenominator;
+            }
+          }
+        }
+      }
+      const children = ly.Layer;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          visit(child);
+        }
+      }
+    };
+    visit(root);
+  }
+
+  private findAppLayerForWmtsIdentifier(
+    identifier: string,
+    appCfg: AppCfg,
+    serviceId?: string
+  ): AppLayer | undefined {
+    const id = identifier.trim();
+    if (!id) {
+      return undefined;
+    }
+    return appCfg.layers.find((appLayer) => {
+      if (serviceId !== undefined && appLayer.service !== serviceId) {
+        return false;
+      }
+      return (appLayer.layers ?? []).some(
+        (ln) => id === ln || id.endsWith(`:${ln}`) || ln === id.split(':').pop()
+      );
+    });
   }
 
   /**

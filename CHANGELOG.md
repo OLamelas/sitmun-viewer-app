@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
+- Virtual WMS GetCapabilities: profile `minScaleDenominator` / `maxScaleDenominator` are merged via `RasterLayerService.applyVirtualCatalogProfileScaleDenominators` (synthetic catalog only); real fetches use `RasterLayerService.processWmtCapabilitiesResult` (WMTS bbox + scales by `serviceId` / URL and real WMS layer names vs `AppLayer.layers`), not during synthetic document generation.
 - `AuthenticationService` session helpers, OIDC entry (`initOidcAuth` / `authorizeOidcUser`), periodic proxy token refresh, and cleanup paths aligned with backend cookie/session behavior.
 - GitHub Actions CI uses Node.js 20.19 (aligned with `engines`), runs ESLint, fails the job on test failures, and builds with the `production` Angular configuration instead of the removed `testdeployment` profile.
 - Regenerated `package-lock.json` so `npm ci` stays in sync with `package.json`.

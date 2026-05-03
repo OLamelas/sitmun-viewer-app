@@ -23,6 +23,8 @@ export interface RealLayerConfig {
   url: string;
   type: string;
   layerNames: string[];
+  /** AppCfg {@link AppService#id}; set when resolved from catalog so proxy/direct URLs can match scales. */
+  serviceId?: string;
 }
 
 /**
@@ -248,7 +250,8 @@ export class VirtualWmsCapabilitiesService {
       return {
         url: ensureString(service.url),
         type: ensureString(service.type),
-        layerNames: layer.layers // Array of WMS layer names from the layer
+        layerNames: layer.layers, // Array of WMS layer names from the layer
+        serviceId: service.id
       };
     }
 

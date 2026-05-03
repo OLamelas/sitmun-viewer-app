@@ -384,7 +384,12 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
                     nodeId,
                     appCfg
                   );
-                return Promise.resolve(capabilities);
+                return Promise.resolve(
+                  handler.rasterService.applyVirtualCatalogProfileScaleDenominators(
+                    capabilities,
+                    appCfg
+                  )
+                );
               } catch (error) {
                 console.error(
                   '[Virtual WMS] Failed to generate capabilities',
@@ -397,6 +402,9 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
 
           // Not a virtual service, proceed with normal fetch
           const proceedResult = joinPoint.proceed();
+          const appCfgForResult =
+            handler.sitnaApi.getGlobal('currentAppCfg') ??
+            handler.currentAppCfg;
 
           // Handle both Promise and synchronous returns
           if (
@@ -405,29 +413,20 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
           ) {
             // It's a Promise
             return (proceedResult as Promise<unknown>).then(
-              (result: unknown) => {
-                const cfg =
-                  handler.sitnaApi.getGlobal('currentAppCfg') ??
-                  handler.currentAppCfg;
-                result = handler.rasterService.processWmtsCapabilitiesResult(
+              (result: unknown) =>
+                handler.rasterService.processWmtCapabilitiesResult(
                   layer,
                   capabilitiesUrl,
                   result,
-                  cfg || undefined
-                );
-
-                return result;
-              }
+                  appCfgForResult || undefined
+                )
             );
           } else {
-            const cfg =
-              handler.sitnaApi.getGlobal('currentAppCfg') ??
-              handler.currentAppCfg;
-            return handler.rasterService.processWmtsCapabilitiesResult(
+            return handler.rasterService.processWmtCapabilitiesResult(
               layer,
               capabilitiesUrl,
               proceedResult,
-              cfg || undefined
+              appCfgForResult || undefined
             );
           }
         }
@@ -482,6 +481,8 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             type?: string;
             layerNames?: string | string[];
             nodeId?: string;
+            /** {@link AppService#id}; set when resolving from catalog for proxy-aware scale merge. */
+            serviceId?: string;
             [key: string]: unknown;
           };
 
@@ -497,6 +498,9 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
               ? realLayerConfig.layerNames
               : [realLayerConfig.layerNames];
             layerOptions.nodeId = layerName;
+            if (realLayerConfig.serviceId) {
+              layerOptions.serviceId = realLayerConfig.serviceId;
+            }
           } else {
             layerOptions.id = self.getUID();
             layerOptions.hideTree = true;

@@ -58,6 +58,10 @@ export interface AppLayer {
   title: string;
   layers: string[];
   service: string;
+  /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
+  minScaleDenominator?: number;
+  /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
+  maxScaleDenominator?: number;
 }
 
 export interface AppService {
