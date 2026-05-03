@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file. The format 
 - `MapServiceWorkerService` wiring that stores middleware URL in IndexedDB and posts it to the service worker for proxy-backed map requests.
 - OAuth2/OpenID Connect `/callback` route and `CallbackComponent` flow to finish viewer sign-in after the identity provider redirect.
 - Jest unit tests for `AuthenticationInterceptor`, `CredentialsInterceptor`, `AuthenticationGuard`, and `IndexedDbService`.
+- `LayerCatalogControlHandler.patchLayerCatalogAddLayerToMap` applies per-layer `transparency` (0..100, 0 = opaque) from the client profile as SITNA opacity (`(100 - transparency) / 100`) on the layer returned by `map.addLayer`, so work-layer transparency matches the admin configuration.
+- `AppLayer.transparency` and `RealLayerConfig.transparency` carry the profile value through `VirtualWmsCapabilitiesService.findRealLayerConfig`.
 
 ### Changed
 

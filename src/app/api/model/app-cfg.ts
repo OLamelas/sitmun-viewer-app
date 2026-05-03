@@ -62,6 +62,8 @@ export interface AppLayer {
   minScaleDenominator?: number;
   /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
   maxScaleDenominator?: number;
+  /** Layer transparency 0..100 (0 = opaque, 100 = fully transparent); omitted when unset. */
+  transparency?: number;
 }
 
 export interface AppService {

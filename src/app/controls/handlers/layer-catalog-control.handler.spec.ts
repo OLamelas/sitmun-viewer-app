@@ -585,6 +585,222 @@ describe('LayerCatalogControlHandler', () => {
     });
   });
 
+  describe('patchLayerCatalogAddLayerToMap (transparency → opacity)', () => {
+    /** Build a stub TC namespace exposing only what the patch reads. */
+    function buildMockTC(addedLayer: any) {
+      const newLayerInstance: any = {
+        getCapabilitiesPromise: jest.fn().mockResolvedValue(undefined),
+        isCompatible: jest.fn().mockReturnValue(true),
+        Capability: { Layer: { Name: 'n1' } }
+      };
+      const Raster = jest.fn().mockImplementation(() => newLayerInstance);
+      const LayerCatalog: any = function () {};
+      LayerCatalog.prototype.addLayerToMap = function () {
+        // original is replaced by meld.around; never invoked when realLayerConfig is found
+      };
+      return {
+        TC: {
+          Util: {
+            extend: (target: any, ...sources: any[]) =>
+              Object.assign(target ?? {}, ...sources)
+          },
+          layer: { Raster },
+          control: { LayerCatalog }
+        },
+        newLayerInstance,
+        addedLayer
+      };
+    }
+
+    /** Minimal AppCfg satisfying the patch's null/empty checks. */
+    const minimalContext: AppCfg = {
+      application: {
+        id: 1,
+        title: 't',
+        type: 'x',
+        theme: 'd',
+        srs: 'EPSG:25831',
+        initialExtent: [0, 0, 1, 1]
+      },
+      backgrounds: [],
+      groups: [],
+      layers: [],
+      services: [],
+      tasks: [],
+      trees: []
+    } as any;
+
+    it('calls setOpacity((100-transparency)/100) on the layer returned by map.addLayer', async () => {
+      const setOpacityMock = jest.fn().mockResolvedValue(undefined);
+      const addedLayer: any = { setOpacity: setOpacityMock, renderOptions: {} };
+      const { TC } = buildMockTC(addedLayer);
+      mockSitnaApi.getTC.mockReturnValue(TC as any);
+
+      mockVirtualCapabilities.findRealLayerConfig = jest
+        .fn()
+        .mockReturnValue({
+          url: 'https://wms.example/',
+          type: 'WMS',
+          layerNames: ['n1'],
+          serviceId: 'service/1',
+          transparency: 50
+        });
+
+      mockSitnaApi.setGlobal('currentAppCfg', minimalContext);
+
+      await handler['patchLayerCatalogAddLayerToMap']();
+
+      const map = {
+        crs: 'EPSG:25831',
+        addLayer: jest.fn().mockResolvedValue(addedLayer)
+      };
+      const ctxThis = {
+        map,
+        getUID: () => 'uid-1',
+        showProjectionChangeDialog: () => undefined
+      };
+      const layerArg = {
+        title: 'L1',
+        url: 'https://stale/',
+        type: 'WMS',
+        options: { url: 'https://stale/', type: 'WMS' }
+      };
+
+      await TC.control.LayerCatalog.prototype.addLayerToMap.call(
+        ctxThis,
+        layerArg,
+        'node/1'
+      );
+
+      expect(map.addLayer).toHaveBeenCalledTimes(1);
+      expect(map.addLayer.mock.calls[0][0]).toMatchObject({
+        renderOptions: { opacity: 0.5 }
+      });
+      expect(setOpacityMock).toHaveBeenCalledTimes(1);
+      expect(setOpacityMock).toHaveBeenCalledWith(0.5);
+      expect(addedLayer.renderOptions.opacity).toBe(0.5);
+    });
+
+    it('skips setOpacity when transparency is 0 (default opaque)', async () => {
+      const setOpacityMock = jest.fn();
+      const addedLayer: any = { setOpacity: setOpacityMock };
+      const { TC } = buildMockTC(addedLayer);
+      mockSitnaApi.getTC.mockReturnValue(TC as any);
+
+      mockVirtualCapabilities.findRealLayerConfig = jest
+        .fn()
+        .mockReturnValue({
+          url: 'https://wms.example/',
+          type: 'WMS',
+          layerNames: ['n1'],
+          serviceId: 'service/1',
+          transparency: 0
+        });
+
+      mockSitnaApi.setGlobal('currentAppCfg', minimalContext);
+
+      await handler['patchLayerCatalogAddLayerToMap']();
+
+      const map = {
+        crs: 'EPSG:25831',
+        addLayer: jest.fn().mockResolvedValue(addedLayer)
+      };
+      const ctxThis = {
+        map,
+        getUID: () => 'uid-1',
+        showProjectionChangeDialog: () => undefined
+      };
+
+      await TC.control.LayerCatalog.prototype.addLayerToMap.call(
+        ctxThis,
+        { title: 'L1', options: {} },
+        'node/1'
+      );
+
+      expect(map.addLayer).toHaveBeenCalledTimes(1);
+      expect(setOpacityMock).not.toHaveBeenCalled();
+    });
+
+    it('skips setOpacity when transparency is undefined', async () => {
+      const setOpacityMock = jest.fn();
+      const addedLayer: any = { setOpacity: setOpacityMock };
+      const { TC } = buildMockTC(addedLayer);
+      mockSitnaApi.getTC.mockReturnValue(TC as any);
+
+      mockVirtualCapabilities.findRealLayerConfig = jest
+        .fn()
+        .mockReturnValue({
+          url: 'https://wms.example/',
+          type: 'WMS',
+          layerNames: ['n1'],
+          serviceId: 'service/1'
+        });
+
+      mockSitnaApi.setGlobal('currentAppCfg', minimalContext);
+
+      await handler['patchLayerCatalogAddLayerToMap']();
+
+      const map = {
+        crs: 'EPSG:25831',
+        addLayer: jest.fn().mockResolvedValue(addedLayer)
+      };
+      const ctxThis = {
+        map,
+        getUID: () => 'uid-1',
+        showProjectionChangeDialog: () => undefined
+      };
+
+      await TC.control.LayerCatalog.prototype.addLayerToMap.call(
+        ctxThis,
+        { title: 'L1', options: {} },
+        'node/1'
+      );
+
+      expect(setOpacityMock).not.toHaveBeenCalled();
+    });
+
+    it('does not call setOpacity when CRS is incompatible (layer never added)', async () => {
+      const setOpacityMock = jest.fn();
+      const addedLayer: any = { setOpacity: setOpacityMock };
+      const { TC, newLayerInstance } = buildMockTC(addedLayer);
+      newLayerInstance.isCompatible = jest.fn().mockReturnValue(false);
+      mockSitnaApi.getTC.mockReturnValue(TC as any);
+
+      mockVirtualCapabilities.findRealLayerConfig = jest
+        .fn()
+        .mockReturnValue({
+          url: 'https://wms.example/',
+          type: 'WMS',
+          layerNames: ['n1'],
+          serviceId: 'service/1',
+          transparency: 75
+        });
+
+      mockSitnaApi.setGlobal('currentAppCfg', minimalContext);
+
+      await handler['patchLayerCatalogAddLayerToMap']();
+
+      const map = {
+        crs: 'EPSG:3857',
+        addLayer: jest.fn().mockResolvedValue(addedLayer)
+      };
+      const ctxThis = {
+        map,
+        getUID: () => 'uid-1',
+        showProjectionChangeDialog: jest.fn()
+      };
+
+      await TC.control.LayerCatalog.prototype.addLayerToMap.call(
+        ctxThis,
+        { title: 'L1', options: {} },
+        'node/1'
+      );
+
+      expect(map.addLayer).not.toHaveBeenCalled();
+      expect(setOpacityMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Integration', () => {
     it('should handle full workflow', async () => {
       const context: AppCfg = {

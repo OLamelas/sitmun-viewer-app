@@ -25,6 +25,8 @@ export interface RealLayerConfig {
   layerNames: string[];
   /** AppCfg {@link AppService#id}; set when resolved from catalog so proxy/direct URLs can match scales. */
   serviceId?: string;
+  /** AppLayer transparency 0..100 (0 = opaque); converted to SITNA opacity downstream. */
+  transparency?: number;
 }
 
 /**
@@ -251,7 +253,8 @@ export class VirtualWmsCapabilitiesService {
         url: ensureString(service.url),
         type: ensureString(service.type),
         layerNames: layer.layers, // Array of WMS layer names from the layer
-        serviceId: service.id
+        serviceId: service.id,
+        transparency: layer.transparency
       };
     }
 

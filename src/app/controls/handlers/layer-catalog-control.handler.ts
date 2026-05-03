@@ -486,6 +486,10 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             [key: string]: unknown;
           };
 
+          // Profile-driven transparency (0..100, 0 = opaque) → SITNA opacity (0..1, 1 = opaque).
+          // Skip when null/0; SITNA layers default to opacity 1.
+          const transparency = realLayerConfig?.transparency;
+
           if (realLayerConfig) {
             layerOptions.id = self.getUID();
             layerOptions.hideTree = true;
@@ -538,7 +542,41 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             }
 
             if (newLayer.isCompatible(self.map.crs)) {
-              self.map.addLayer(layerOptions);
+              // SITNA's map.addLayer creates and returns a *new* layer instance, distinct from
+              // `newLayer` above (which was used only for capability/title preflight). Apply the
+              // profile transparency on the live map layer so WorkLayerManager sees it.
+              const profileOpacity =
+                typeof transparency === 'number' && transparency > 0
+                  ? (100 - transparency) / 100
+                  : undefined;
+
+              // WorkLayerManager slider reads renderOptions.opacity (0..1), not only getOpacity().
+              if (profileOpacity != null) {
+                const prev = layerOptions['renderOptions'] as
+                  | Record<string, unknown>
+                  | undefined;
+                layerOptions['renderOptions'] = {
+                  ...(typeof prev === 'object' && prev !== null ? prev : {}),
+                  opacity: profileOpacity
+                };
+              }
+
+              const addedLayer = await self.map.addLayer(layerOptions);
+
+              if (
+                addedLayer != null &&
+                profileOpacity != null &&
+                typeof addedLayer.setOpacity === 'function'
+              ) {
+                await addedLayer.setOpacity(profileOpacity);
+                const ro = addedLayer.renderOptions as
+                  | Record<string, unknown>
+                  | undefined;
+                addedLayer.renderOptions = {
+                  ...(typeof ro === 'object' && ro !== null ? ro : {}),
+                  opacity: profileOpacity
+                };
+              }
               return newLayer;
             } else {
               const showProjectionChangeDialog =
