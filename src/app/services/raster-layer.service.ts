@@ -9,7 +9,11 @@ import {
   VirtualWmsCapabilitiesService,
   RealLayerConfig
 } from './virtual-wms-capabilities.service';
-import { WMSCapabilities, WMSLayer } from '../types/wms-capabilities';
+import {
+  WMSCapabilities,
+  WMSLayer,
+  WmsOnlineResourceLink
+} from '../types/wms-capabilities';
 
 /**
  * Service for Raster layer-specific functionality.
@@ -196,8 +200,11 @@ export class RasterLayerService {
 
   /**
    * Process **real** fetched GetCapabilities for Raster layers (non-virtual URLs only).
-   * WMTS: normalizes BoundingBox; WMS/WMTS: merges profile denominators when the layer maps to an
-   * {@link AppService} in {@link AppCfg} (prefer {@code layer.options.serviceId} for proxy URLs).
+   * WMTS: normalizes BoundingBox; WMS/WMTS: merges profile denominators, {@code Title},
+   * {@code Abstract}, and OGC {@code MetadataURL} / {@code DataURL} on the matched capability
+   * layer when the layer maps to an {@link AppService} in {@link AppCfg} (prefer
+   * {@code layer.options.serviceId} for proxy URLs). Profile string fields use present / non-empty
+   * replace, present / empty remove, and omitted leave the service document unchanged.
    *
    * @param layer - The layer instance
    * @param capabilitiesUrl - The capabilities URL (must not be {@code virtual://…})
@@ -299,8 +306,9 @@ export class RasterLayerService {
   }
 
   /**
-   * Apply configured scale denominators to capabilities for a matched service.
-   * Delegates to WMS or WMTS applier based on capabilities structure and layer type.
+   * Merge {@link AppCfg} raster layer settings onto fetched capabilities for a matched service.
+   * Delegates to {@link #applyAppProfileToRealWmsCapabilityLayers} or
+   * {@link #applyAppProfileToRealWmtsCapabilityLayers} by layer type.
    */
   private applyConfiguredProfileScaleDenominators(
     capabilities: unknown,
@@ -312,7 +320,7 @@ export class RasterLayerService {
     const wmsRoot = (capabilities as WMSCapabilities | undefined)?.Capability
       ?.Layer;
     if (isRasterWms && wmsRoot) {
-      this.applyRealWmsProfileScaleDenominators(
+      this.applyAppProfileToRealWmsCapabilityLayers(
         capabilities,
         serviceId,
         appCfg
@@ -325,7 +333,7 @@ export class RasterLayerService {
       }
     )?.Contents?.Layer;
     if (isRasterWmts && Array.isArray(wmtsLayers)) {
-      this.applyRealWmtsProfileScaleDenominators(
+      this.applyAppProfileToRealWmtsCapabilityLayers(
         capabilities,
         serviceId,
         appCfg
@@ -353,10 +361,13 @@ export class RasterLayerService {
   }
 
   /**
-   * Apply scale denominators to real WMS capabilities by matching layer names.
-   * Walks the WMS layer tree and applies scales from AppLayers that reference this service.
+   * Apply scale denominators and profile fields to real WMS capability layers by matching layer names.
+   * Walks the WMS layer tree and applies scales, `Title`, `Abstract`, and OGC `MetadataURL` / `DataURL`
+   * on each matched {@link WMSLayer}. String fields follow {@link #mergeProfileTitleAbstractOntoLayer} and
+   * {@link #mergeProfileOgcOnlineResourceLinks}: property present + non-empty replaces; present + empty
+   * removes; property absent leaves the fetched value unchanged.
    */
-  private applyRealWmsProfileScaleDenominators(
+  private applyAppProfileToRealWmsCapabilityLayers(
     capabilities: unknown,
     serviceId: string,
     appCfg: AppCfg
@@ -383,6 +394,8 @@ export class RasterLayerService {
             if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
               ly.MaxScaleDenominator = appLayer.maxScaleDenominator;
             }
+            this.mergeProfileTitleAbstractOntoLayer(ly, appLayer);
+            this.mergeProfileOgcOnlineResourceLinks(ly, appLayer);
             break;
           }
         }
@@ -398,10 +411,12 @@ export class RasterLayerService {
   }
 
   /**
-   * Apply scale denominators to real WMTS capabilities by matching identifiers.
-   * Filters to AppLayers that reference this service, then matches WMTS layer identifiers.
+   * Apply scale denominators, {@code Title}, {@code Abstract}, and OGC-style {@code MetadataURL} /
+   * {@code DataURL} to real WMTS capability layer entries by matching layer identifiers.
+   * Title, abstract, and URL fields use {@link #mergeProfileTitleAbstractOntoLayer} and
+   * {@link #mergeProfileOgcOnlineResourceLinks}.
    */
-  private applyRealWmtsProfileScaleDenominators(
+  private applyAppProfileToRealWmtsCapabilityLayers(
     capabilities: unknown,
     serviceId: string,
     appCfg: AppCfg
@@ -438,6 +453,100 @@ export class RasterLayerService {
       }
       if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
         wmtsLayer['MaxScaleDenominator'] = appLayer.maxScaleDenominator;
+      }
+      this.mergeProfileTitleAbstractOntoLayer(wmtsLayer, appLayer);
+      this.mergeProfileOgcOnlineResourceLinks(wmtsLayer, appLayer);
+    }
+  }
+
+  /**
+   * Applies profile {@link AppLayer#title} as {@code Title} and {@link AppLayer#description} as
+   * {@code Abstract} on the capability layer (WMS or WMTS record). Same rules as
+   * {@link #mergeProfileOgcOnlineResourceLinks}.
+   */
+  private mergeProfileTitleAbstractOntoLayer(
+    target: WMSLayer | Record<string, unknown>,
+    appLayer: AppLayer
+  ): void {
+    const t = target as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'title')) {
+      const raw = appLayer.title;
+      const s =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (s) {
+        t['Title'] = s;
+      } else {
+        delete t['Title'];
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'description')) {
+      const raw = appLayer.description;
+      const s =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (s) {
+        t['Abstract'] = s;
+      } else {
+        delete t['Abstract'];
+      }
+    }
+  }
+
+  /**
+   * Applies profile {@link AppLayer#metadataURL} / {@link AppLayer#datasetURL} to OGC
+   * {@code MetadataURL} / {@code DataURL} on the capability layer. If a property is
+   * present on {@code appLayer} (see {@code Object.prototype.hasOwnProperty}), it replaces the capability
+   * value: non-empty after trim writes one entry; {@code null}, {@code undefined}, empty string, or
+   * whitespace-only removes the key so upstream GetCapabilities links are not left in place.
+   * Omitted JSON keys leave the fetched document unchanged for that field (same idea as
+   * {@link #enrichRasterLayerInfo}).
+   */
+  private mergeProfileOgcOnlineResourceLinks(
+    target: WMSLayer | Record<string, unknown>,
+    appLayer: AppLayer
+  ): void {
+    const t = target as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'metadataURL')) {
+      const raw = appLayer.metadataURL;
+      const md =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (md) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('metadata', md),
+          OnlineResource: { 'xlink:href': md }
+        };
+        t['MetadataURL'] = [entry];
+      } else {
+        delete t['MetadataURL'];
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'datasetURL')) {
+      const raw = appLayer.datasetURL;
+      const du =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (du) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('download', du),
+          OnlineResource: { 'xlink:href': du }
+        };
+        t['DataURL'] = [entry];
+      } else {
+        delete t['DataURL'];
       }
     }
   }
@@ -504,14 +613,24 @@ export class RasterLayerService {
     if (!id) {
       return undefined;
     }
-    return appCfg.layers.find((appLayer) => {
-      if (serviceId !== undefined && appLayer.service !== serviceId) {
-        return false;
-      }
-      return (appLayer.layers ?? []).some(
-        (ln) => id === ln || id.endsWith(`:${ln}`) || ln === id.split(':').pop()
-      );
-    });
+    const matchesService = (appLayer: AppLayer) =>
+      serviceId === undefined || appLayer.service === serviceId;
+
+    const exact = appCfg.layers.find(
+      (appLayer) =>
+        matchesService(appLayer) &&
+        (appLayer.layers ?? []).some((ln) => ln.trim() === id)
+    );
+    if (exact) {
+      return exact;
+    }
+    return appCfg.layers.find(
+      (appLayer) =>
+        matchesService(appLayer) &&
+        (appLayer.layers ?? []).some((ln) =>
+          this.wmsLayerNameMatchesConfiguredName(id, ln)
+        )
+    );
   }
 
   /**

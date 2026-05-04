@@ -609,27 +609,50 @@ export class VirtualWmsCapabilitiesService {
   }
 
   /**
-   * Adds OGC WMS Layer {@code MetadataURL} / {@code DataURL} from profile cartography when set.
+   * Applies profile {@link AppLayer#metadataURL} / {@link AppLayer#datasetURL} to OGC
+   * {@code MetadataURL} / {@code DataURL} on a synthetic layer (same semantics as
+   * real GetCapabilities post-processing: property present + non-empty replaces;
+   * present + empty removes; omitted leaves the layer unchanged for that field).
    */
   private static appendProfileOgcUrlsToLayer(
     layer: WMSLayer,
     appLayer: AppLayer
   ): void {
-    const md = appLayer.metadataURL?.trim();
-    const du = appLayer.datasetURL?.trim();
-    if (md) {
-      const entry: WmsOnlineResourceLink = {
-        Format: inferOgcLinkFormat('metadata', md),
-        OnlineResource: { 'xlink:href': md }
-      };
-      layer.MetadataURL = [entry];
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'metadataURL')) {
+      const raw = appLayer.metadataURL;
+      const md =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (md) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('metadata', md),
+          OnlineResource: { 'xlink:href': md }
+        };
+        layer.MetadataURL = [entry];
+      } else {
+        delete layer.MetadataURL;
+      }
     }
-    if (du) {
-      const entry: WmsOnlineResourceLink = {
-        Format: inferOgcLinkFormat('download', du),
-        OnlineResource: { 'xlink:href': du }
-      };
-      layer.DataURL = [entry];
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'datasetURL')) {
+      const raw = appLayer.datasetURL;
+      const du =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (du) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('download', du),
+          OnlineResource: { 'xlink:href': du }
+        };
+        layer.DataURL = [entry];
+      } else {
+        delete layer.DataURL;
+      }
     }
   }
 

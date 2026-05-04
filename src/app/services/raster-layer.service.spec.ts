@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+
+import { AppCfg, AppLayer } from '@api/model/app-cfg';
 import { TranslateService } from '@ngx-translate/core';
 
-import { AppCfg } from '@api/model/app-cfg';
 
 import { ConfigLookupService } from './config-lookup.service';
 import { LanguageService } from './language.service';
@@ -123,6 +124,7 @@ describe('RasterLayerService', () => {
       );
       expect(leaf.MinScaleDenominator).toBe(1000);
       expect(leaf.MaxScaleDenominator).toBe(500000);
+      expect(leaf.Title).toBe('L1');
     });
 
     it('falls back to URL match when serviceId is absent', () => {
@@ -141,6 +143,327 @@ describe('RasterLayerService', () => {
         cfg
       );
       expect(leaf.MinScaleDenominator).toBe(1000);
+      expect(leaf.Title).toBe('L1');
+    });
+
+    it('sets Abstract from AppLayer.description on real WMS layers when matched', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            description: 'Authoritative road network'
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        Abstract: 'upstream abstract'
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Abstract).toBe('Authoritative road network');
+      expect(leaf.Title).toBe('L1');
+    });
+
+    it('sets MetadataURL and DataURL from profile on real WMS layers when matched', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            metadataURL: 'https://example.com/metadata.xml',
+            datasetURL: 'https://example.com/data.zip'
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads'
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.MetadataURL).toEqual([
+        {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'https://example.com/metadata.xml' }
+        }
+      ]);
+      expect(leaf.DataURL).toEqual([
+        {
+          Format: 'application/zip',
+          OnlineResource: { 'xlink:href': 'https://example.com/data.zip' }
+        }
+      ]);
+    });
+
+    it('removes upstream WMS MetadataURL when profile saves an empty metadataURL', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            metadataURL: ''
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        MetadataURL: [
+          {
+            Format: 'text/xml',
+            OnlineResource: { 'xlink:href': 'http://upstream/meta.xml' }
+          }
+        ]
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.MetadataURL).toBeUndefined();
+    });
+
+    it('leaves upstream WMS MetadataURL when profile layer omits metadataURL', () => {
+      const upstream: WMSLayer['MetadataURL'] = [
+        {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'http://upstream/meta.xml' }
+        }
+      ];
+      const cfg = minimalAppCfg();
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        MetadataURL: upstream
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.MetadataURL).toEqual(upstream);
+    });
+
+    it('leaves Abstract untouched when AppLayer.description is missing or empty', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1'
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        Abstract: 'upstream abstract'
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Abstract).toBe('upstream abstract');
+      expect(leaf.Title).toBe('L1');
+    });
+
+    it('removes WMS Abstract when profile description is only whitespace', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            description: '   \n\t  '
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        Abstract: 'upstream abstract'
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Abstract).toBeUndefined();
+    });
+
+    it('removes WMS Abstract when profile description is an empty string', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            description: ''
+          }
+        ]
+      };
+      const leaf: WMSLayer = {
+        Name: 'ns:roads',
+        Title: 'roads',
+        Abstract: 'upstream abstract'
+      };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Abstract).toBeUndefined();
+    });
+
+    it('removes WMS Title when profile title is blank', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: '   ',
+            layers: ['ns:roads'],
+            service: 'S1'
+          }
+        ]
+      };
+      const leaf: WMSLayer = { Name: 'ns:roads', Title: 'upstream title' };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Title).toBeUndefined();
+    });
+
+    it('leaves WMS Title unchanged when profile layer omits title', () => {
+      const l0 = minimalAppCfg().layers[0];
+      const layerWithoutTitle = {
+        id: l0.id,
+        layers: l0.layers,
+        service: l0.service,
+        minScaleDenominator: l0.minScaleDenominator,
+        maxScaleDenominator: l0.maxScaleDenominator
+      } as AppLayer;
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [layerWithoutTitle]
+      };
+      const leaf: WMSLayer = { Name: 'ns:roads', Title: 'upstream title' };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        'https://proxy.example/foo?bar',
+        caps,
+        cfg
+      );
+      expect(leaf.Title).toBe('upstream title');
+    });
+
+    it('does not write Abstract for virtual capabilities URLs', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'L1',
+            layers: ['ns:roads'],
+            service: 'S1',
+            description: 'Should not appear'
+          }
+        ]
+      };
+      const leaf: WMSLayer = { Name: 'ns:roads', Title: 'roads' };
+      const caps = {
+        version: '1.3.0',
+        Service: {},
+        Capability: { Layer: leaf }
+      } as WMSCapabilities;
+      const url = virtualWms.generateVirtualUrl('node-9');
+      service.processWmtCapabilitiesResult(
+        { type: 'WMS', options: { serviceId: 'S1' } },
+        url,
+        caps,
+        cfg
+      );
+      expect(leaf.Abstract).toBeUndefined();
     });
 
     it('applies WMTS scales only for AppLayers on the matched service', () => {
@@ -187,6 +510,136 @@ describe('RasterLayerService', () => {
       );
       expect(wmtsLayer['MinScaleDenominator']).toBe(200);
       expect(wmtsLayer['MaxScaleDenominator']).toBe(20000);
+      expect(wmtsLayer['Title']).toBe('L1');
+    });
+
+    it('sets WMTS capability layer Title and Abstract from AppLayer when matched', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'Profile title',
+            layers: ['tile-layer'],
+            service: 'S1',
+            description: 'Profile abstract text',
+            minScaleDenominator: 1,
+            maxScaleDenominator: 2
+          }
+        ],
+        services: [
+          {
+            id: 'S1',
+            url: 'https://upstream.example/geoserver/wmts',
+            type: 'WMTS',
+            parameters: {}
+          }
+        ]
+      };
+      const wmtsLayer: Record<string, unknown> = {
+        Identifier: 'tile-layer',
+        Title: 'Tile',
+        Abstract: 'upstream wmts abstract'
+      };
+      const caps = { Contents: { Layer: [wmtsLayer] } };
+      service.processWmtCapabilitiesResult(
+        { type: 'WMTS', options: { serviceId: 'S1' } },
+        'https://upstream.example/geoserver/wmts',
+        caps,
+        cfg
+      );
+      expect(wmtsLayer['Title']).toBe('Profile title');
+      expect(wmtsLayer['Abstract']).toBe('Profile abstract text');
+    });
+
+    it('sets WMTS MetadataURL and DataURL from profile when matched', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L1',
+            title: 'T',
+            layers: ['tile-layer'],
+            service: 'S1',
+            metadataURL: 'https://example.com/metadata.xml',
+            datasetURL: 'https://example.com/data.zip'
+          }
+        ],
+        services: [
+          {
+            id: 'S1',
+            url: 'https://upstream.example/geoserver/wmts',
+            type: 'WMTS',
+            parameters: {}
+          }
+        ]
+      };
+      const wmtsLayer: Record<string, unknown> = {
+        Identifier: 'tile-layer',
+        Title: 'Tile'
+      };
+      const caps = { Contents: { Layer: [wmtsLayer] } };
+      service.processWmtCapabilitiesResult(
+        { type: 'WMTS', options: { serviceId: 'S1' } },
+        'https://upstream.example/geoserver/wmts',
+        caps,
+        cfg
+      );
+      expect(wmtsLayer['MetadataURL']).toEqual([
+        {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'https://example.com/metadata.xml' }
+        }
+      ]);
+      expect(wmtsLayer['DataURL']).toEqual([
+        {
+          Format: 'application/zip',
+          OnlineResource: { 'xlink:href': 'https://example.com/data.zip' }
+        }
+      ]);
+    });
+
+    it('resolves WMTS layer by exact layers[] match before namespace fallback', () => {
+      const cfg: AppCfg = {
+        ...minimalAppCfg(),
+        layers: [
+          {
+            id: 'L-exact',
+            title: 'Exact match layer',
+            layers: ['my:layer'],
+            service: 'S1',
+            description: 'from exact row'
+          },
+          {
+            id: 'L-fuzzy',
+            title: 'Wrong if chosen',
+            layers: ['layer'],
+            service: 'S1',
+            description: 'from fuzzy row'
+          }
+        ],
+        services: [
+          {
+            id: 'S1',
+            url: 'https://upstream.example/wmts',
+            type: 'WMTS',
+            parameters: {}
+          }
+        ]
+      };
+      const wmtsLayer: Record<string, unknown> = {
+        Identifier: 'my:layer',
+        Title: 'Up'
+      };
+      const caps = { Contents: { Layer: [wmtsLayer] } };
+      service.processWmtCapabilitiesResult(
+        { type: 'WMTS', options: { serviceId: 'S1' } },
+        'https://upstream.example/wmts',
+        caps,
+        cfg
+      );
+      expect(wmtsLayer['Abstract']).toBe('from exact row');
+      expect(wmtsLayer['Title']).toBe('Exact match layer');
     });
   });
 

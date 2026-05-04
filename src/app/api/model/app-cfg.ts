@@ -55,7 +55,17 @@ export interface AppGroup {
 
 export interface AppLayer {
   id: string;
+  /**
+   * Profile layer title; merged as OGC `Title` on matched real WMS/WMTS capability layers in
+   * `RasterLayerService` when the key exists in the profile JSON (non-empty replaces, empty removes,
+   * omitted leaves the service value).
+   */
   title: string;
+  /**
+   * Profile text merged as OGC `Abstract` when the key exists (non-empty replaces, empty removes,
+   * omitted leaves the service value).
+   */
+  description?: string;
   layers: string[];
   service: string;
   /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
@@ -64,9 +74,15 @@ export interface AppLayer {
   maxScaleDenominator?: number;
   /** Layer transparency 0..100 (0 = opaque, 100 = fully transparent); omitted when unset. */
   transparency?: number;
-  /** OGC WMS Layer MetadataURL href (profile / cartography). */
+  /**
+   * OGC MetadataURL href; when the key exists, merged onto matched real or virtual WMS/WMTS layers
+   * (non-empty replaces, empty removes, omitted unchanged).
+   */
   metadataURL?: string;
-  /** OGC WMS Layer DataURL href (profile / cartography). */
+  /**
+   * OGC DataURL href; when the key exists, merged onto matched real or virtual WMS/WMTS layers
+   * (non-empty replaces, empty removes, omitted unchanged).
+   */
   datasetURL?: string;
 }
 

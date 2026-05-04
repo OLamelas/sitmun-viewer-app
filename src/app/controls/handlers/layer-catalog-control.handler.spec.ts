@@ -1,14 +1,16 @@
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { TranslateService } from '@ngx-translate/core';
 
 import { AppCfg, AppTasks, AppTree, AppNodeInfo } from '@api/model/app-cfg';
+import { TranslateService } from '@ngx-translate/core';
+
 
 import { LayerCatalogControlHandler } from './layer-catalog-control.handler';
 import { AppConfigService } from '../../services/app-config.service';
 import { ConfigLookupService } from '../../services/config-lookup.service';
 import { LanguageService } from '../../services/language.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
+import { SitnaCapabilitiesInterceptor } from '../../services/sitna-capabilities-interceptor.service';
 import { VirtualWmsCapabilitiesService } from '../../services/virtual-wms-capabilities.service';
 
 describe('LayerCatalogControlHandler', () => {
@@ -17,6 +19,7 @@ describe('LayerCatalogControlHandler', () => {
   let mockVirtualCapabilities: jest.Mocked<VirtualWmsCapabilitiesService>;
   let mockConfigLookup: jest.Mocked<ConfigLookupService>;
   let mockLanguageService: jest.Mocked<LanguageService>;
+  let mockInterceptor: jest.Mocked<SitnaCapabilitiesInterceptor>;
   let _mockAppCfg: AppCfg;
 
   beforeEach(() => {
@@ -62,6 +65,13 @@ describe('LayerCatalogControlHandler', () => {
       getCurrentLanguage: jest.fn()
     } as Partial<jest.Mocked<LanguageService>> as jest.Mocked<LanguageService>;
 
+    mockInterceptor = {
+      ensurePatched: jest.fn().mockResolvedValue(undefined),
+      restore: jest.fn()
+    } as Partial<
+      jest.Mocked<SitnaCapabilitiesInterceptor>
+    > as jest.Mocked<SitnaCapabilitiesInterceptor>;
+
     const mockAppConfigService = {
       getControlDefault: jest.fn().mockReturnValue({ div: 'tc-slot-toc' })
     };
@@ -77,6 +87,7 @@ describe('LayerCatalogControlHandler', () => {
         },
         { provide: ConfigLookupService, useValue: mockConfigLookup },
         { provide: LanguageService, useValue: mockLanguageService },
+        { provide: SitnaCapabilitiesInterceptor, useValue: mockInterceptor },
         {
           provide: TranslateService,
           useValue: { instant: (k: string) => k }
@@ -122,6 +133,34 @@ describe('LayerCatalogControlHandler', () => {
   describe('requiredPatches', () => {
     it('should have no required patches (standard control)', () => {
       expect(handler.requiredPatches).toBeUndefined();
+    });
+  });
+
+  describe('needsBootstrap()', () => {
+    const eligibility = { isEnabledByDefault: () => false };
+
+    it('returns true when a layerCatalog task is present', () => {
+      const tasks: AppTasks[] = [
+        { 'ui-control': 'sitna.layerCatalog' } as any
+      ];
+      expect(handler.needsBootstrap!(tasks, eligibility)).toBe(true);
+    });
+
+    it('returns false when no layerCatalog task is present', () => {
+      const tasks: AppTasks[] = [
+        { 'ui-control': 'sitna.basemapSelector' } as any
+      ];
+      expect(handler.needsBootstrap!(tasks, eligibility)).toBe(false);
+    });
+  });
+
+  describe('applyBootstrap()', () => {
+    it('initializes config lookup and delegates to SitnaCapabilitiesInterceptor.ensurePatched', async () => {
+      await handler.applyBootstrap!(_mockAppCfg);
+
+      expect(mockConfigLookup.initialize).toHaveBeenCalledWith(_mockAppCfg);
+      expect(mockInterceptor.ensurePatched).toHaveBeenCalledTimes(1);
+      expect(mockInterceptor.ensurePatched).toHaveBeenCalledWith(_mockAppCfg);
     });
   });
 

@@ -2,13 +2,14 @@ import { inject, Injectable } from '@angular/core';
 
 import { AppCfg, AppNodeInfo, AppTasks, AppTree } from '@api/model/app-cfg';
 
+import { ensureLayerCatalogInfoAffordance } from './layer-catalog-info-affordance';
 import { CatalogSwitchingService } from '../../services/catalog-switching.service';
 import { ConfigLookupService } from '../../services/config-lookup.service';
 import { RasterLayerService } from '../../services/raster-layer.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
+import { SitnaCapabilitiesInterceptor } from '../../services/sitna-capabilities-interceptor.service';
 import { VirtualWmsCapabilitiesService } from '../../services/virtual-wms-capabilities.service';
 import type { Meld, MeldJoinPoint } from '../../types/meld.types';
-import { ensureLayerCatalogInfoAffordance } from './layer-catalog-info-affordance';
 import { ControlHandlerBase } from '../control-handler-base';
 import {
   BootstrapEligibilityOptions,
@@ -45,6 +46,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   private readonly configLookup = inject(ConfigLookupService);
   private readonly catalogSwitching = inject(CatalogSwitchingService);
   private readonly rasterService = inject(RasterLayerService);
+  private readonly capabilitiesInterceptor = inject(SitnaCapabilitiesInterceptor);
 
   // Store AppCfg for use in patches
   // Set in loadPatches() before patches are applied, so it's guaranteed to be non-null when patches execute
@@ -66,19 +68,16 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   }
 
   /**
-   * Bootstrap: patch Layer.getCapabilitiesOnline before map init so virtual WMS interception works.
+   * Bootstrap: install the shared SITNA capabilities interceptor so virtual WMS interception works.
+   * The interceptor is a root-scoped singleton; the first control handler to call `ensurePatched`
+   * installs the around-advice. Subsequent calls (e.g. on language reload) refresh `AppCfg`.
    *
    * @param context - Full application configuration context (required, must not be null)
    */
   async applyBootstrap(context: AppCfg): Promise<void> {
-    // Store AppCfg immediately for use in patch closures
     this.currentAppCfg = context;
-
-    // Ensure context is initialized in lookup service
     this.configLookup.initialize(context);
-
-    // Apply only the bootstrap patch here; other patches run in loadPatches()
-    await this.patchLayerGetCapabilitiesOnline();
+    await this.capabilitiesInterceptor.ensurePatched(context);
   }
 
   /**
@@ -316,126 +315,6 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   // ============================================================================
   // PATCH METHODS - Ported from sandbox layer-catalog-control.component.ts
   // ============================================================================
-
-  /**
-   * Patch Layer.getCapabilitiesOnline to intercept virtual service requests.
-   * When a virtual service URL is detected, return generated capabilities instead of fetching from server.
-   */
-  private async patchLayerGetCapabilitiesOnline(): Promise<void> {
-    await this.withTCAsync(async () => {
-      const SITNA = this.sitnaApi.getSITNA();
-
-      // Try to find Layer prototype
-      const LayerProto = (SITNA as any)?.layer?.Layer?.prototype;
-      if (!LayerProto) {
-        return;
-      }
-
-      if (typeof LayerProto.getCapabilitiesOnline !== 'function') {
-        return;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      const handler = this;
-      const advice = meld.around(
-        LayerProto,
-        'getCapabilitiesOnline',
-        function (this: any, joinPoint: MeldJoinPoint): any {
-          // Get the layer instance
-          const layer = this as {
-            url?: string;
-            getCapabilitiesUrl?: () => string;
-            [key: string]: unknown;
-          };
-
-          // Try to get the capabilities URL from multiple sources
-          // 1. Check if URL is passed as first argument
-          // 2. Check layer.getCapabilitiesUrl() method
-          // 3. Check layer.url property
-          let capabilitiesUrl: string | undefined;
-          if (
-            joinPoint.args &&
-            joinPoint.args.length > 0 &&
-            typeof joinPoint.args[0] === 'string'
-          ) {
-            capabilitiesUrl = joinPoint.args[0];
-          } else if (typeof layer.getCapabilitiesUrl === 'function') {
-            capabilitiesUrl = layer.getCapabilitiesUrl();
-          } else if (layer.url) {
-            capabilitiesUrl = layer.url;
-          }
-
-          const appCfg =
-            handler.sitnaApi.getGlobal('currentAppCfg') ??
-            handler.currentAppCfg;
-          // Check if this is a virtual service
-          if (
-            capabilitiesUrl &&
-            appCfg &&
-            handler.virtualWmsService.isVirtualServiceUrl(capabilitiesUrl)
-          ) {
-            const nodeId =
-              handler.virtualWmsService.extractNodeIdFromUrl(capabilitiesUrl);
-
-            if (nodeId) {
-              try {
-                // Generate virtual capabilities
-                const capabilities =
-                  handler.virtualWmsService.generateCapabilities(
-                    nodeId,
-                    appCfg
-                  );
-                return Promise.resolve(
-                  handler.rasterService.applyVirtualCatalogProfileScaleDenominators(
-                    capabilities,
-                    appCfg
-                  )
-                );
-              } catch (error) {
-                console.error(
-                  '[Virtual WMS] Failed to generate capabilities',
-                  error
-                );
-                // Fall back to normal fetch
-              }
-            }
-          }
-
-          // Not a virtual service, proceed with normal fetch
-          const proceedResult = joinPoint.proceed();
-          const appCfgForResult =
-            handler.sitnaApi.getGlobal('currentAppCfg') ??
-            handler.currentAppCfg;
-
-          // Handle both Promise and synchronous returns
-          if (
-            proceedResult &&
-            typeof (proceedResult as any).then === 'function'
-          ) {
-            // It's a Promise
-            return (proceedResult as Promise<unknown>).then(
-              (result: unknown) =>
-                handler.rasterService.processWmtCapabilitiesResult(
-                  layer,
-                  capabilitiesUrl,
-                  result,
-                  appCfgForResult || undefined
-                )
-            );
-          } else {
-            return handler.rasterService.processWmtCapabilitiesResult(
-              layer,
-              capabilitiesUrl,
-              proceedResult,
-              appCfgForResult || undefined
-            );
-          }
-        }
-      );
-
-      this.patchManager.add(() => meld.remove(advice));
-    });
-  }
 
   /**
    * Patch LayerCatalog.addLayerToMap to replace virtual layers with real layer configurations.

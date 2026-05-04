@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { TranslateService } from '@ngx-translate/core';
 
 import { AppCfg } from '@api/model/app-cfg';
+import { TranslateService } from '@ngx-translate/core';
+
 
 import { ConfigLookupService } from './config-lookup.service';
 import { LanguageService } from './language.service';
