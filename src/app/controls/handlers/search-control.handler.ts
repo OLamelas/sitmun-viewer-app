@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 
-import { AppCfg } from '@api/model/app-cfg';
+import { AppCfg, AppTasks } from '@api/model/app-cfg';
+import { SitnaControlConfig } from '../control-handler.interface';
 
 import { SitnaApiService } from '../../services/sitna-api.service';
 import type { Meld, MeldJoinPoint } from '../../types/meld.types';
@@ -30,6 +31,37 @@ export class SearchControlHandler extends ControlHandlerBase {
 
   constructor(sitnaApi: SitnaApiService) {
     super(sitnaApi);
+  }
+
+  /**
+   * Build configuration injecting parser functions into customSearchTypes
+   * that define a `parserPattern` (regex string stored in DB).
+   *
+   * Example admin config for a customSearchType entry:
+   *   parserPattern: "^[0-9]{7}[A-Z]{2}[0-9]{4}[A-Z][0-9]{4}[A-Z]{2}$"
+   */
+  override buildConfiguration(task: AppTasks, context: AppCfg): SitnaControlConfig | null {
+    const config = super.buildConfiguration(task, context);
+    if (!config || !Array.isArray(config['customSearchTypes'])) {
+      return config;
+    }
+
+    config['customSearchTypes'] = config['customSearchTypes'].map((searchType: any) => {
+      const { parserPattern, ...rest } = searchType;
+      if (!parserPattern) {
+        return searchType;
+      }
+      const regex = new RegExp(parserPattern, 'i');
+      return {
+        ...rest,
+        parser: (pattern: string) => {
+          const trimmed = pattern.trim().toUpperCase();
+          return regex.test(trimmed) ? [trimmed] : null;
+        }
+      };
+    });
+
+    return config;
   }
 
   /**

@@ -9,6 +9,18 @@ module.exports = {
   output: {
     publicPath: '/'
   },
+
+  devServer: {
+    proxy: [
+      {
+        context: ['/catastro-inspire'],
+        target: 'https://ovc.catastro.meh.es',
+        changeOrigin: true,
+        pathRewrite: { '^/catastro-inspire': '/INSPIRE' },
+        secure: false
+      }
+    ]
+  },
   
   resolve: {
     // Evita errores del tipo "Module not found" durante el empaquetamiento
