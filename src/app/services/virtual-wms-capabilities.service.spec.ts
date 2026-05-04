@@ -208,6 +208,26 @@ describe('VirtualWmsCapabilitiesService', () => {
       ]);
     });
 
+    it('sets leaf queryable true when profile omits queryableFeatureEnabled', () => {
+      const capabilities = service.generateCapabilities('node-1', mockAppCfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf?.queryable).toBe(true);
+    });
+
+    it('sets leaf queryable false when profile sets queryableFeatureEnabled false', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1' ? { ...l, queryableFeatureEnabled: false } : l
+        )
+      };
+      const capabilities = service.generateCapabilities('node-1', cfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf?.queryable).toBe(false);
+    });
+
     it('should throw error for non-existent node', () => {
       expect(() => {
         service.generateCapabilities('non-existent', mockAppCfg);

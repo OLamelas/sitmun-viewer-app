@@ -84,6 +84,11 @@ export interface AppLayer {
    * (non-empty replaces, empty removes, omitted unchanged).
    */
   datasetURL?: string;
+  /**
+   * When false, merged WMS GetCapabilities set `queryable` false for this profile layer.
+   * Omitted or undefined: legacy profiles behave as queryable (true).
+   */
+  queryableFeatureEnabled?: boolean;
 }
 
 export interface AppService {

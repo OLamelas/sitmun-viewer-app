@@ -5,6 +5,7 @@ import { AppCfg, AppLayer, AppService } from '@api/model/app-cfg';
 import { ConfigLookupService } from './config-lookup.service';
 import { LanguageService } from './language.service';
 import { inferOgcLinkFormat, LayerInfoService } from './layer-info.service';
+import { isProfileLayerQueryable } from './profile-layer-queryable';
 import {
   VirtualWmsCapabilitiesService,
   RealLayerConfig
@@ -396,6 +397,7 @@ export class RasterLayerService {
             }
             this.mergeProfileTitleAbstractOntoLayer(ly, appLayer);
             this.mergeProfileOgcOnlineResourceLinks(ly, appLayer);
+            ly.queryable = isProfileLayerQueryable(appLayer);
             break;
           }
         }

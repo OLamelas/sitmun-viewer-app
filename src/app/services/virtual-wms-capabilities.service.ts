@@ -9,6 +9,7 @@ import {
 } from '@api/model/app-cfg';
 
 import { inferOgcLinkFormat } from './layer-info.service';
+import { isProfileLayerQueryable } from './profile-layer-queryable';
 import {
   WMSCapabilities,
   WMSCapability,
@@ -585,7 +586,7 @@ export class VirtualWmsCapabilitiesService {
         // Abstract will be enriched from WMS capabilities in patchRasterGetInfo
         // For now, set to empty string - it will be populated from real WMS capabilities when available
         layer.Abstract = '';
-        layer.queryable = true;
+        layer.queryable = isProfileLayerQueryable(appLayer);
 
         // Get CRS from service
         const service = apiConfig.services.find(
