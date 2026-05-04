@@ -9,7 +9,7 @@ import {
   VERSION
 } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
-import { MatMenu } from '@angular/material/menu';
+import { MatMenu, MatMenuTrigger } from '@angular/material/menu';
 import { Router } from '@angular/router';
 
 import { CustomDetails } from '@api/services/user.service';
@@ -37,6 +37,8 @@ import {
 })
 export class MenuComponent implements OnInit, OnDestroy {
   @ViewChild(MatMenu, { static: true }) menu!: MatMenu;
+  @ViewChild('languageMenuTrigger') languageMenuTrigger?: MatMenuTrigger;
+
   currentLang = '';
   languages!: LanguageDTO[];
   environment = environment;
@@ -44,6 +46,7 @@ export class MenuComponent implements OnInit, OnDestroy {
   unreviewedErrorCount = 0;
 
   private errorsSubscription?: Subscription;
+  private preventAutoOpen = false;
 
   @Input() username = '';
   @Input() isConnected!: boolean;
@@ -86,6 +89,26 @@ export class MenuComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.errorsSubscription?.unsubscribe();
+  }
+
+  /** Closes all menu overlays including nested language submenu. */
+  closeAllMenus(): void {
+    // Set flag to prevent automatic reopen from hover
+    this.preventAutoOpen = true;
+
+    this.languageMenuTrigger?.closeMenu();
+
+    // Clear the flag after a short delay to allow normal hover behavior later
+    setTimeout(() => {
+      this.preventAutoOpen = false;
+    }, 500);
+  }
+
+  onLanguageButtonMouseEnter(): void {
+    // Block the menu from opening if we just closed it programmatically
+    if (this.preventAutoOpen && this.languageMenuTrigger) {
+      this.languageMenuTrigger.closeMenu();
+    }
   }
 
   private loadLanguages() {

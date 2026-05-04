@@ -36,7 +36,9 @@
   <!-- Language selector as menu item with sub-menu -->
   <button
     mat-menu-item
+    #languageMenuTrigger="matMenuTrigger"
     [matMenuTriggerFor]="languageMenu"
+    (mouseenter)="onLanguageButtonMouseEnter()"
     *ngIf="showSwitchLanguageButton && languages !== undefined">
     <!-- Flag icon instead of globe icon -->
     <span class="current-language-icon" *ngIf="getLanguageIcon(currentLang)">

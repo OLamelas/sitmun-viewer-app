@@ -69,6 +69,7 @@
 
       <button
         mat-icon-button
+        #toolbarMenuTrigger="matMenuTrigger"
         [matMenuTriggerFor]="menuComponent.menu"
         [class.login-menu-button]="isOnAuthLogin">
         <mat-icon>menu</mat-icon>
