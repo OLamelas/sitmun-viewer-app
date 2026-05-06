@@ -92,7 +92,8 @@ export class MoreInfoAdvancedService {
    * Returns all MIA tasks for a given cartography ID.
    */
   getTasksForCartography(cartographyId: string): MiaTask[] {
-    return this.miaTasksByCartography.get(String(cartographyId)) || [];
+    const tasks = this.miaTasksByCartography.get(String(cartographyId)) || [];
+    return tasks.sort((a, b) => this.parseTaskId(a.id) - this.parseTaskId(b.id));
   }
 
   /**
@@ -103,9 +104,10 @@ export class MoreInfoAdvancedService {
   }
 
   renderMiaTasks(miaTasks: MiaTask[], featureData: any): Observable<MiaRenderedTask[]> {
+    const neededFields = this.extractNeededFields(miaTasks);
     const body = {
       miaTaskIds: miaTasks.map((task) => this.parseTaskId(task.id)).filter(Number.isFinite),
-      parameters: featureData || {}
+      parameters: this.filterFeatureParameters(featureData, neededFields)
     };
 
     return this.http.post<MiaRenderResponse>(
@@ -120,6 +122,87 @@ export class MoreInfoAdvancedService {
         error: error.message || 'MIA rendering failed'
       }]))
     );
+  }
+
+  /**
+   * Extract the set of feature field names that are referenced
+   * by child task parameter mappings.
+   * Returns null if we cannot determine (meaning send all short fields).
+   */
+  private extractNeededFields(miaTasks: MiaTask[]): Set<string> | null {
+    const fields = new Set<string>();
+    let hasTemplateChild = false;
+
+    for (const miaTask of miaTasks) {
+      for (const child of miaTask.includedTasks) {
+        // Template children may use any field in their HTML - we can't know which
+        if (child.childType === 'template') {
+          hasTemplateChild = true;
+        }
+        // Extract field references from parameter mappings
+        if (child.parameters) {
+          for (const value of Object.values(child.parameters)) {
+            if (typeof value === 'string') {
+              fields.add(value);
+            } else if (value && typeof value === 'object' && 'value' in value) {
+              fields.add(String(value.value));
+            }
+          }
+        }
+        // Extract from childTaskParameters
+        if (child.childTaskParameters) {
+          for (const taskParams of Object.values(child.childTaskParameters)) {
+            if (taskParams && typeof taskParams === 'object') {
+              for (const val of Object.values(taskParams)) {
+                if (typeof val === 'string') {
+                  fields.add(val);
+                } else if (val && typeof val === 'object' && 'value' in val) {
+                  fields.add(String((val as any).value));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If there are template children, we can't fully determine needed fields
+    // Return null to signal "keep all short fields"
+    return hasTemplateChild ? null : fields;
+  }
+
+  /**
+   * Filter feature parameters to reduce payload size.
+   * If neededFields is provided, only keep those fields.
+   * If null (template children present), keep all fields except injected HTML and very long strings.
+   */
+  private filterFeatureParameters(
+    featureData: any,
+    neededFields: Set<string> | null
+  ): Record<string, any> {
+    if (!featureData || typeof featureData !== 'object') {
+      return {};
+    }
+    const filtered: Record<string, any> = {};
+    for (const [key, value] of Object.entries(featureData)) {
+      // Always skip MoreInfo injected HTML fields
+      if (typeof value === 'string' && value.includes('sitmun-more-info-')) {
+        continue;
+      }
+      if (neededFields !== null) {
+        // Strict mode: only send referenced fields
+        if (!neededFields.has(key)) {
+          continue;
+        }
+      } else {
+        // Permissive mode (template children): skip long strings (> 500 chars)
+        if (typeof value === 'string' && value.length > 500) {
+          continue;
+        }
+      }
+      filtered[key] = value;
+    }
+    return filtered;
   }
 
   private parseTaskId(id: string): number {

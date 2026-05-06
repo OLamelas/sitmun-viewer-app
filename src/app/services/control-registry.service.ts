@@ -482,7 +482,13 @@ export class ControlRegistryService {
    * Unregister all handlers and clean up.
    */
   unregisterAll(): void {
-    this.handlers.forEach((handler) => handler.cleanup?.());
+    this.handlers.forEach((handler, key) => {
+      try {
+        handler.cleanup?.();
+      } catch (e) {
+        console.warn(`[ControlRegistry] cleanup failed for '${key}':`, e);
+      }
+    });
     this.handlers.clear();
   }
 

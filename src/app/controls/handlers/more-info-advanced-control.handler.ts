@@ -30,6 +30,18 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     super(sitnaApi);
   }
 
+  override cleanup(): void {
+    this.removeMiaOverlay();
+    super.cleanup();
+  }
+
+  private removeMiaOverlay(): void {
+    if (this.miaOverlayElement) {
+      this.miaOverlayElement.remove();
+      this.miaOverlayElement = null;
+    }
+  }
+
   override buildConfiguration(_task: AppTasks, context: AppCfg): SitnaControlConfig | null {
     this.appConfig = context;
     this.miaService.initialize(context);
@@ -232,21 +244,11 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     sitnaFeature: any,
     overlay: HTMLElement
   ): { left: number; top: number } {
-    const olMap = this.sitnaMap?.wrap?.map;
-    const coordinate = this.getFeaturePopupCoordinate(sitnaFeature);
-    const mapRect = olMap?.getTargetElement?.().getBoundingClientRect?.();
-    const pixel = coordinate && olMap?.getPixelFromCoordinate
-      ? olMap.getPixelFromCoordinate(coordinate)
-      : null;
-
-    const fallbackLeft = Math.round(window.innerWidth * 0.5);
-    const fallbackTop = Math.round(window.innerHeight * 0.35);
-    const rawLeft = mapRect && pixel ? mapRect.left + pixel[0] : fallbackLeft;
-    const rawTop = mapRect && pixel ? mapRect.top + pixel[1] - 24 : fallbackTop;
-
     const width = overlay.offsetWidth || 420;
     const height = overlay.offsetHeight || 260;
-    return this.clampMiaOverlayPosition(rawLeft - width / 2, rawTop - height - 12, width, height);
+    const left = Math.round((window.innerWidth - width) / 2);
+    const top = Math.round((window.innerHeight - height) * 0.4);
+    return { left: Math.max(8, left), top: Math.max(8, top) };
   }
 
   private placeMiaOverlayAt(left: number, top: number): void {
@@ -320,10 +322,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   }
 
   private buildMiaHtml(popupId: string, miaTask: MiaTask, layerName: string): string {
-    const title = this.escapeHtml(miaTask.name || 'Informació avançada');
-    const subtitle = layerName ? `<div class="sitmun-mia-layer">${this.escapeHtml(layerName)}</div>` : '';
-    const header = `<div class="sitmun-mia-header"><div class="sitmun-mia-title">${title}</div>${subtitle}</div>`;
-    return `${header}<div class="sitmun-mia-body" data-mia-task-id="${this.parseTaskId(miaTask.id)}"><div class="sitmun-mia-loading"><span class="sitmun-mia-spinner"></span> Carregant...</div></div>`;
+    return `<div class="sitmun-mia-body" data-mia-task-id="${this.parseTaskId(miaTask.id)}"><div class="sitmun-mia-loading"><span class="sitmun-mia-spinner"></span> Carregant...</div></div>`;
   }
 
   private wireTopLevelMiaTabs(popupId: string, contentDiv: HTMLElement): void {
