@@ -99,6 +99,15 @@ export class CommonService {
 
   constructor(private http: HttpClient) {}
 
+  private withLang(path: string): string {
+    const lang = this.languageService.getCurrentLanguage()?.trim();
+    if (!lang) {
+      return path;
+    }
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}lang=${encodeURIComponent(lang)}`;
+  }
+
   fetchDashboardItems(dashboardType: DashboardTypes, keywords?: string) {
     let path;
     switch (dashboardType) {
@@ -112,7 +121,9 @@ export class CommonService {
     if (keywords) {
       path += '?keywords=' + keywords;
     }
-    return this.http.get<DashboardItemsResponse>(environment.apiUrl + path);
+    return this.http.get<DashboardItemsResponse>(
+      environment.apiUrl + this.withLang(path)
+    );
   }
 
   fetchTerritoriesByApplication(id: number, keywords?: string) {
@@ -120,7 +131,7 @@ export class CommonService {
     if (keywords) {
       path += '?keywords=' + keywords;
     }
-    return this.http.get<ResponseDto>(environment.apiUrl + path);
+    return this.http.get<ResponseDto>(environment.apiUrl + this.withLang(path));
   }
 
   fetchApplicationsByTerritory(id: number, keywords?: string) {
@@ -128,7 +139,7 @@ export class CommonService {
     if (keywords) {
       path += '?keywords=' + keywords;
     }
-    return this.http.get<ResponseDto>(environment.apiUrl + path);
+    return this.http.get<ResponseDto>(environment.apiUrl + this.withLang(path));
   }
 
   fetchMapConfiguration(

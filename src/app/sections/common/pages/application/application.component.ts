@@ -1,5 +1,5 @@
 import { Location } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { UserDto } from '@api/model/user';
@@ -10,6 +10,9 @@ import {
   DashboardTypes
 } from '@api/services/common.service';
 import { NavigationPath } from '@config/app.config';
+import { TranslateService } from '@ngx-translate/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 @Component({
   standalone: false,
@@ -17,25 +20,41 @@ import { NavigationPath } from '@config/app.config';
   templateUrl: './application.component.html',
   styleUrls: ['./application.component.scss']
 })
-export class ApplicationComponent implements OnInit {
+export class ApplicationComponent implements OnInit, OnDestroy {
   applicationId: number;
   application!: DashboardItem;
   territories: any[] = [];
   groupedTerritories: { group?: string; items: any[] }[] = [];
   searchValue = '';
+  private readonly destroy$ = new Subject<void>();
 
   constructor(
     private location: Location,
     private route: ActivatedRoute,
     private commonService: CommonService,
     private router: Router,
-    private accountService: AccountService
+    private accountService: AccountService,
+    private translateService: TranslateService
   ) {
     const appId = this.route.snapshot.paramMap.get('applicationId');
     this.applicationId = Number(appId);
   }
 
   ngOnInit() {
+    this.loadData();
+    this.translateService.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.loadData();
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  private loadData(): void {
     this.commonService
       .fetchDashboardItems(DashboardTypes.APPLICATIONS)
       .subscribe({

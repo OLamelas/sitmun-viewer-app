@@ -29,7 +29,8 @@ import { NavigationPath } from '@config/app.config';
 import { TranslateService } from '@ngx-translate/core';
 import { ChangeApplicationTerritoryDialogComponent } from '@ui/components/change-application-territory-dialog/change-application-territory-dialog.component';
 import { MenuComponent } from '@ui/components/menu/menu.component';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { LanguageService } from 'src/app/services/language.service';
 
 @Component({
@@ -78,6 +79,7 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
   username = '';
   navigationClassActive: NavigationButtonActive = NavigationButtonActive.HOME;
   private routerSubscription?: Subscription;
+  private readonly destroy$ = new Subject<void>();
 
   headerLeftSection: IconSection[] | null = null;
   headerRightSection: IconSection[] | null = null;
@@ -120,6 +122,12 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
         this.closeToolbarMenu();
       }
     });
+    this.translate.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.overrideNavbar(this.router.url);
+        this.updateButtonVisibility();
+      });
     // Initial update
     this.updateButtonVisibility();
   }
@@ -141,6 +149,8 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
 
   ngOnDestroy() {
     this.routerSubscription?.unsubscribe();
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   overrideNavbar(url: string) {
