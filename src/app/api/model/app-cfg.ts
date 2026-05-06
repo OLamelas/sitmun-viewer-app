@@ -78,6 +78,9 @@ export interface AppTasks {
   id: string;
   parameters: any;
   'ui-control': string;
+  typeId?: number;
+  name?: string;
+  cartographyId?: string;
 }
 
 export interface AppTree {
