@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file. The format 
 - Jest unit tests for `AuthenticationInterceptor`, `CredentialsInterceptor`, `AuthenticationGuard`, and `IndexedDbService`.
 - `LayerCatalogControlHandler.patchLayerCatalogAddLayerToMap` applies per-layer `transparency` (0..100, 0 = opaque) from the client profile as SITNA opacity (`(100 - transparency) / 100`) on the layer returned by `map.addLayer`, so work-layer transparency matches the admin configuration.
 - `AppLayer.transparency` and `RealLayerConfig.transparency` carry the profile value through `VirtualWmsCapabilitiesService.findRealLayerConfig`.
+- `LayerCatalogControlHandler.patchLayerCatalogAddLayerToMap` applies the profile `order` as SITNA `zIndex` on layer add (`realLayerConfig?.order ?? 0`), so the relative position of catalog-added layers matches the admin configuration. Externally loaded layers (no profile entry) and layers with a null/absent `order` default to `zIndex` 0; SITNA still keeps raster layers below vector layers, and runtime drag-reorder via `WorkLayerManager` bypasses this value.
+- `AppLayer.order` and `RealLayerConfig.order` carry the profile value through `VirtualWmsCapabilitiesService.findRealLayerConfig`; `SitnaLayerOptions.zIndex` documents the SITNA option used by `map.addLayer`.
 - Layer catalog info: `metadataURL` / `datasetURL` from the client profile and, when absent, OGC `MetadataURL` / `DataURL` from upstream GetCapabilities appear in the info modal; virtual GetCapabilities leaf layers emit the same OGC elements from profile values.
 - Layer catalog info modal: metadata/download links use SITNA-oriented list markup (`tc-ctl-lcat-metadata`, `tc-ctl-lcat-dataurl`, `tc-ctl-lcat-info-links`); link labels use MIME-specific i18n only when a declared `Format` exists (OGC or profile object); plain profile URLs use generic metadata/download labels; virtual capabilities omit synthetic `Format` on profile URLs; `Raster.getInfo` patch keeps the info button when only `dataUrl` is returned (matches SITNA LayerCatalog visibility rules).
 - Client profile tree nodes may expose optional `metadataURL` / `datasetURL` from backend `NodeDto`.
@@ -23,6 +25,8 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
+- Jest: `LayerCatalogControlHandler` specs keep transparency and `order`→`zIndex` coverage in a single `patchLayerCatalogAddLayerToMap` `describe` (shared mocks).
+- Jest / ESLint: `TerritoryComponent` spec provides `TranslateService`; `AbstractDashboardComponent` import order satisfies `import/order`.
 - Virtual WMS GetCapabilities: profile `minScaleDenominator` / `maxScaleDenominator` are merged via `RasterLayerService.applyVirtualCatalogProfileScaleDenominators` (synthetic catalog only); real fetches use `RasterLayerService.processWmtCapabilitiesResult` (WMTS bbox + scales by `serviceId` / URL and real WMS layer names vs `AppLayer.layers`, plus WMS `Title` / `Abstract` from `AppLayer.title` / `AppLayer.description`).
 - `AuthenticationService` session helpers, OIDC entry (`initOidcAuth` / `authorizeOidcUser`), periodic proxy token refresh, and cleanup paths aligned with backend cookie/session behavior.
 - GitHub Actions CI uses Node.js 20.19 (aligned with `engines`), runs ESLint, fails the job on test failures, and builds with the `production` Angular configuration instead of the removed `testdeployment` profile.

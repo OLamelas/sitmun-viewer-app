@@ -30,6 +30,13 @@ export interface RealLayerConfig {
   serviceId?: string;
   /** AppLayer transparency 0..100 (0 = opaque); converted to SITNA opacity downstream. */
   transparency?: number;
+  /**
+   * AppLayer order; applied as SITNA `zIndex` when the layer is added to the working layers via
+   * `LayerCatalog.addLayerToMap`. Higher values render above lower; absent/null is treated as
+   * `zIndex` 0. SITNA keeps raster layers below vector layers regardless of `order`, and runtime
+   * reorder via the WorkLayerManager control bypasses `zIndex` and is not persisted.
+   */
+  order?: number;
 }
 
 /**
@@ -257,7 +264,8 @@ export class VirtualWmsCapabilitiesService {
         type: ensureString(service.type),
         layerNames: layer.layers, // Array of WMS layer names from the layer
         serviceId: service.id,
-        transparency: layer.transparency
+        transparency: layer.transparency,
+        order: layer.order
       };
     }
 

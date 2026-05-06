@@ -441,6 +441,12 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
                 };
               }
 
+              // Profile-driven layer order → SITNA `zIndex` (default 0). Applied uniformly to
+              // catalog-resolved real layers and externally loaded ones so the SITNA stealth
+              // fallback (1) never leaks in. Subsequent WorkLayerManager drag-reorder bypasses
+              // this value (operates on OpenLayers indices, not zIndex) and is not persisted.
+              layerOptions['zIndex'] = realLayerConfig?.order ?? 0;
+
               const addedLayer = await self.map.addLayer(layerOptions);
 
               if (

@@ -629,8 +629,7 @@ describe('LayerCatalogControlHandler', () => {
     });
   });
 
-  describe('patchLayerCatalogAddLayerToMap (transparency → opacity)', () => {
-    /** Build a stub TC namespace exposing only what the patch reads. */
+  describe('patchLayerCatalogAddLayerToMap', () => {
     function buildMockTC(addedLayer: any) {
       const newLayerInstance: any = {
         getCapabilitiesPromise: jest.fn().mockResolvedValue(undefined),
@@ -639,9 +638,7 @@ describe('LayerCatalogControlHandler', () => {
       };
       const Raster = jest.fn().mockImplementation(() => newLayerInstance);
       const LayerCatalog: any = function () {};
-      LayerCatalog.prototype.addLayerToMap = function () {
-        // original is replaced by meld.around; never invoked when realLayerConfig is found
-      };
+      LayerCatalog.prototype.addLayerToMap = function () {};
       return {
         TC: {
           Util: {
@@ -656,7 +653,6 @@ describe('LayerCatalogControlHandler', () => {
       };
     }
 
-    /** Minimal AppCfg satisfying the patch's null/empty checks. */
     const minimalContext: AppCfg = {
       application: {
         id: 1,
@@ -842,6 +838,59 @@ describe('LayerCatalogControlHandler', () => {
 
       expect(map.addLayer).not.toHaveBeenCalled();
       expect(setOpacityMock).not.toHaveBeenCalled();
+    });
+
+    async function expectZIndexOnAddLayer(
+      realLayerConfig: any | null,
+      zIndex: number
+    ): Promise<void> {
+      const addedLayer: any = {};
+      const { TC } = buildMockTC(addedLayer);
+      mockSitnaApi.getTC.mockReturnValue(TC as any);
+      mockVirtualCapabilities.findRealLayerConfig = jest
+        .fn()
+        .mockReturnValue(realLayerConfig);
+      mockSitnaApi.setGlobal('currentAppCfg', minimalContext);
+      await handler['patchLayerCatalogAddLayerToMap']();
+      const addLayer = jest.fn().mockResolvedValue(addedLayer);
+      await TC.control.LayerCatalog.prototype.addLayerToMap.call(
+        {
+          map: { crs: 'EPSG:25831', addLayer },
+          getUID: () => 'uid-1',
+          showProjectionChangeDialog: () => undefined
+        },
+        {
+          title: 'L1',
+          url: 'https://stale/',
+          type: 'WMS',
+          options: { url: 'https://stale/', type: 'WMS' }
+        },
+        'node/1'
+      );
+      expect(addLayer.mock.calls[0][0]).toMatchObject({ zIndex });
+    }
+
+    const baseRealLayer = {
+      url: 'https://wms.example/',
+      type: 'WMS',
+      layerNames: ['n1'],
+      serviceId: 'service/1'
+    };
+
+    it('maps profile order to addLayer zIndex', async () => {
+      await expectZIndexOnAddLayer({ ...baseRealLayer, order: 5 }, 5);
+    });
+
+    it('uses zIndex 0 when order is 0', async () => {
+      await expectZIndexOnAddLayer({ ...baseRealLayer, order: 0 }, 0);
+    });
+
+    it('uses zIndex 0 when order is absent', async () => {
+      await expectZIndexOnAddLayer({ ...baseRealLayer }, 0);
+    });
+
+    it('uses zIndex 0 without realLayerConfig', async () => {
+      await expectZIndexOnAddLayer(null, 0);
     });
   });
 

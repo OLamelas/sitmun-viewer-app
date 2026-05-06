@@ -7,8 +7,8 @@ import {
   DashboardItemsResponse,
   DashboardTypes
 } from '@api/services/common.service';
-import { OpenModalService } from '@ui/modal/service/open-modal.service';
 import { TranslateService } from '@ngx-translate/core';
+import { OpenModalService } from '@ui/modal/service/open-modal.service';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 

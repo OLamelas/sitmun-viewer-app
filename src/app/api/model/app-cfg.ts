@@ -75,6 +75,16 @@ export interface AppLayer {
   /** Layer transparency 0..100 (0 = opaque, 100 = fully transparent); omitted when unset. */
   transparency?: number;
   /**
+   * Profile order; applied as SITNA `zIndex` when the layer is added to the working layers via
+   * `LayerCatalog.addLayerToMap`. Higher values render above lower; absent/null is treated as
+   * `zIndex` 0 (the same default applied to externally loaded layers without a profile entry).
+   * Caveats:
+   * - SITNA keeps raster layers below vector layers regardless of `order`.
+   * - Subsequent user-driven reorder via the WorkLayerManager control bypasses `zIndex` and is
+   *   not persisted back to this field.
+   */
+  order?: number;
+  /**
    * OGC MetadataURL href; when the key exists, merged onto matched real or virtual WMS/WMTS layers
    * (non-empty replaces, empty removes, omitted unchanged).
    */
