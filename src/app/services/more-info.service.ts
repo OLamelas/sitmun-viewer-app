@@ -25,7 +25,7 @@ export class MoreInfoService {
     }
 
     config.tasks.forEach((task: any) => {
-      if (task['ui-control'] === 'sitna.moreInfo') {
+      if (task['ui-control'] === 'sitmun.moreInfo') {
         const cartographyId = this.extractCartographyId(task);
         if (cartographyId) {
           const key = String(cartographyId);

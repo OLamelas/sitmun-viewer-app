@@ -25,17 +25,17 @@ describe('MoreInfoService', () => {
   });
 
   describe('initialize', () => {
-    it('should register only sitna.moreInfo tasks and extract cartography ids', () => {
+    it('should register only sitmun.moreInfo tasks and extract cartography ids', () => {
       service.initialize({
         tasks: [
           {
             id: 'task-1',
-            'ui-control': 'sitna.moreInfo',
+            'ui-control': 'sitmun.moreInfo',
             cartography: { id: 12 }
           },
           {
             id: 'task-2',
-            'ui-control': 'sitna.moreInfo',
+            'ui-control': 'sitmun.moreInfo',
             parameters: '{"cartographyId": "77"}'
           },
           {
