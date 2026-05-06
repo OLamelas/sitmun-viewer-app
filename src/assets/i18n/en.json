@@ -1,5 +1,4 @@
 {
-  "genericPrivateHeader.hi": "Hello {{username}}!",
   "callback.processing": "Processing your login...",
   "callback.redirect": "Login successful! Redirecting...",
   "loginPage.logoutText": "Log out",
@@ -162,10 +161,11 @@
   "mapPage.title": "Sample map",
   "dashboardDialog.inputPlaceholder": "Search",
   "menu.login": "Log in",
+  "menu.greeting": "Hello {{username}}!",
   "menu.hi": "Hi, ",
   "menu.logout": "Log Out",
   "menu.dashboard": "Applications",
-  "menu.changeApplication": "Change",
+  "menu.changeAppOrTerritory": "Change",
   "menu.changeTerritory": "Switch territory",
   "menu.continue": "Continue",
   "paginate.previous": "Previous",

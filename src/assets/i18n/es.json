@@ -1,5 +1,4 @@
 {
-  "genericPrivateHeader.hi": "¡Hola {{username}}!",
   "callback.processing": "Procesando el inicio de sesión...",
   "callback.redirect": "Sesión iniciada! Redirigiendo...",
   "loginPage.logoutText": "Desconexión",
@@ -120,10 +119,11 @@
   "mapPage.title": "Mapa de ejemplo",
   "dashboardDialog.inputPlaceholder": "Buscar",
   "menu.login": "Entrar",
+  "menu.greeting": "¡Hola {{username}}!",
   "menu.hi": "Hola, ",
   "menu.logout": "Cerrar Sesión",
   "menu.dashboard": "Aplicaciones",
-  "menu.changeApplication": "Cambiar",
+  "menu.changeAppOrTerritory": "Cambiar",
   "menu.changeTerritory": "Cambiar territorio",
   "menu.continue": "Continuar",
   "paginate.previous": "Anterior",
