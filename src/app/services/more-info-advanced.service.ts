@@ -166,9 +166,10 @@ export class MoreInfoAdvancedService {
       }
     }
 
-    // If there are template children, we can't fully determine needed fields
-    // Return null to signal "keep all short fields"
-    return hasTemplateChild ? null : fields;
+    // If there are template children, or the application config did not expose
+    // child parameter mappings, we cannot determine the exact needed fields.
+    // Return null to signal "keep all short fields".
+    return hasTemplateChild || fields.size === 0 ? null : fields;
   }
 
   /**

@@ -88,4 +88,22 @@ describe('MoreInfoAdvancedService', () => {
     req.flush({ tasks: [{ taskId: 16, title: 'One', html: '<p>ok</p>' }] });
     expect(emitted).toEqual([{ taskId: 16, title: 'One', html: '<p>ok</p>' }]);
   });
+
+  it('keeps short feature attributes when MIA child mappings are not available in viewer config', () => {
+    service.renderMiaTasks([
+      { id: 'task/32304', name: 'MIA 1', cartographyId: '12', visualizationMode: 'tabs', includedTasks: [] }
+    ], {
+      dificultat: 'Mitjana',
+      descr_ca: 'x'.repeat(501)
+    }).subscribe();
+
+    const req = httpMock.expectOne((request) => request.url.endsWith('/api/tasks/template/more-info-advanced/render'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      miaTaskIds: [32304],
+      parameters: { dificultat: 'Mitjana' }
+    });
+
+    req.flush({ tasks: [] });
+  });
 });
