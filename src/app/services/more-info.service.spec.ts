@@ -229,6 +229,35 @@ describe('MoreInfoService', () => {
       });
     });
 
+    it('should send more-info field values as query params for linked API query tasks', () => {
+      let emitted: any;
+
+      service
+        .executeMoreInfo(
+          {
+            id: 'linked-api-task',
+            scope: 'API',
+            url: '/api/proxy/task/42',
+            parameters: {
+              capa: { label: 'capa', value: 'field' }
+            }
+          },
+          { field: 'municipis' }
+        )
+        .subscribe((result) => {
+          emitted = result;
+        });
+
+      const req = httpMock.expectOne('/api/proxy/task/42?capa=municipis');
+      expect(req.request.method).toBe('GET');
+      req.flush({ ok: true });
+
+      expect(emitted).toEqual({
+        success: true,
+        data: { ok: true }
+      });
+    });
+
     it('should execute scope SQL proxy tasks and build query params from task config', () => {
       let emitted: any;
 
