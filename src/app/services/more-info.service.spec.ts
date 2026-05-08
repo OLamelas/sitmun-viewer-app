@@ -25,17 +25,17 @@ describe('MoreInfoService', () => {
   });
 
   describe('initialize', () => {
-    it('should register only sitna.moreInfo tasks and extract cartography ids', () => {
+    it('should register only sitmun.moreInfo tasks and extract cartography ids', () => {
       service.initialize({
         tasks: [
           {
             id: 'task-1',
-            'ui-control': 'sitna.moreInfo',
+            'ui-control': 'sitmun.moreInfo',
             cartography: { id: 12 }
           },
           {
             id: 'task-2',
-            'ui-control': 'sitna.moreInfo',
+            'ui-control': 'sitmun.moreInfo',
             parameters: '{"cartographyId": "77"}'
           },
           {
@@ -220,6 +220,35 @@ describe('MoreInfoService', () => {
       const req = httpMock.expectOne(
         '/api/info/12?city=Barcelona&page=1&active=true&meta=%7B%22source%22:%22sitmun%22%7D'
       );
+      expect(req.request.method).toBe('GET');
+      req.flush({ ok: true });
+
+      expect(emitted).toEqual({
+        success: true,
+        data: { ok: true }
+      });
+    });
+
+    it('should send more-info field values as query params for linked API query tasks', () => {
+      let emitted: any;
+
+      service
+        .executeMoreInfo(
+          {
+            id: 'linked-api-task',
+            scope: 'API',
+            url: '/api/proxy/task/42',
+            parameters: {
+              capa: { label: 'capa', value: 'field' }
+            }
+          },
+          { field: 'municipis' }
+        )
+        .subscribe((result) => {
+          emitted = result;
+        });
+
+      const req = httpMock.expectOne('/api/proxy/task/42?capa=municipis');
       expect(req.request.method).toBe('GET');
       req.flush({ ok: true });
 

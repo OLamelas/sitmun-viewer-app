@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 
 import { AppCfg } from '@api/model/app-cfg';
-import { Observable, of } from 'rxjs';
+import { Observable, from, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { parseTemplate } from 'url-template';
 
@@ -25,7 +25,7 @@ export class MoreInfoService {
     }
 
     config.tasks.forEach((task: any) => {
-      if (task['ui-control'] === 'sitna.moreInfo') {
+      if (task['ui-control'] === 'sitmun.moreInfo') {
         const cartographyId = this.extractCartographyId(task);
         if (cartographyId) {
           const key = String(cartographyId);
@@ -81,6 +81,9 @@ export class MoreInfoService {
     if (task?.scope === 'API') {
       return this.executeApiQuery(parameters, task, featureData);
     }
+    if (task?.scope === 'RESOURCE') {
+      return this.executeResourceQuery(task, featureData);
+    }
     if (task?.scope === 'URL') {
       return this.executeUrlQuery(task, featureData);
     }
@@ -97,6 +100,56 @@ export class MoreInfoService {
       default:
         return of({ error: 'Unknown query type: ' + queryType });
     }
+  }
+
+  /**
+   * Handles a remote resource (no proxy). For images, returns the URL directly so the handler
+   * can render an <img> tag without any XHR (avoids CORS restrictions on image hosts).
+   * For JSON/binary content the server must supply appropriate CORS headers.
+   */
+  private executeResourceQuery(task: any, featureData: any): Observable<any> {
+    const rawUrl = task?.url || task?.command;
+    if (!rawUrl) {
+      return of({ error: 'No resource URL configured in task' });
+    }
+    const url = this.replacePlaceholdersFromParams(
+      String(rawUrl),
+      task?.parameters,
+      featureData
+    );
+    const mimeType: string = task?.mimeType ?? 'application/octet-stream';
+    const filename: string | null = task?.filename ?? null;
+
+    // Images: browser loads natively via <img src> — no XHR, no CORS.
+    if (mimeType.startsWith('image/')) {
+      return of({ success: true, directUrl: url, mimeType, filename });
+    }
+
+    // JSON and XML: fetch content without Angular interceptors (avoids auth headers triggering
+    // CORS preflight) so we can parse and display as a data table.
+    // If the remote server does not allow CORS, fall back gracefully to a direct link.
+    if (mimeType === 'application/json' || mimeType === 'application/xml' || mimeType === 'text/xml') {
+      return from(
+        fetch(url).then((response) => {
+          const contentType = response.headers.get('Content-Type') || mimeType;
+          return response.blob().then((blob) => ({
+            success: true,
+            blob,
+            mimeType: contentType.split(';')[0].trim(),
+            filename
+          }));
+        })
+      ).pipe(
+        catchError(() =>
+          // CORS or network failure: fall back to a direct link so the user can still access the content.
+          of({ success: true, directUrl: url, mimeType, filename })
+        )
+      );
+    }
+
+    // All other types (PDF, DOC, XLS, ODT, XML, …): return the URL directly.
+    // The browser opens or downloads the file natively — no fetch, no CORS.
+    return of({ success: true, directUrl: url, mimeType, filename });
   }
 
   private executeUrlQuery(task: any, featureData: any): Observable<any> {
@@ -148,6 +201,18 @@ export class MoreInfoService {
     const params =
       this.buildQueryParams(parameters?.params, featureData) ||
       this.buildTaskParamQuery(task?.parameters, featureData);
+
+    const mimeType: string = task?.mimeType ?? '';
+    const filename: string | null = task?.filename ?? null;
+
+    const isBinary = mimeType.length > 0 && mimeType !== 'application/json';
+    if (isBinary) {
+      return this.http.get(apiUrl, { params, responseType: 'blob' }).pipe(
+        map((blob) => ({ success: true, blob, mimeType, filename })),
+        catchError((error) => of({ error: error.message || 'API query failed' }))
+      );
+    }
+
     return this.http.get(apiUrl, { params }).pipe(
       map((response) => ({ success: true, data: response })),
       catchError((error) => of({ error: error.message || 'API query failed' }))

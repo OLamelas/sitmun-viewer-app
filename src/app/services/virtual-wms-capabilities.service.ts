@@ -8,11 +8,14 @@ import {
   AppTree
 } from '@api/model/app-cfg';
 
+import { inferOgcLinkFormat } from './layer-info.service';
+import { isProfileLayerQueryable } from './profile-layer-queryable';
 import {
   WMSCapabilities,
   WMSCapability,
   WMSService,
-  WMSLayer
+  WMSLayer,
+  WmsOnlineResourceLink
 } from '../types/wms-capabilities';
 
 /**
@@ -23,6 +26,17 @@ export interface RealLayerConfig {
   url: string;
   type: string;
   layerNames: string[];
+  /** AppCfg {@link AppService#id}; set when resolved from catalog so proxy/direct URLs can match scales. */
+  serviceId?: string;
+  /** AppLayer transparency 0..100 (0 = opaque); converted to SITNA opacity downstream. */
+  transparency?: number;
+  /**
+   * AppLayer order; applied as SITNA `zIndex` when the layer is added to the working layers via
+   * `LayerCatalog.addLayerToMap`. Higher values render above lower; absent/null is treated as
+   * `zIndex` 0. SITNA keeps raster layers below vector layers regardless of `order`, and runtime
+   * reorder via the WorkLayerManager control bypasses `zIndex` and is not persisted.
+   */
+  order?: number;
 }
 
 /**
@@ -248,7 +262,10 @@ export class VirtualWmsCapabilitiesService {
       return {
         url: ensureString(service.url),
         type: ensureString(service.type),
-        layerNames: layer.layers // Array of WMS layer names from the layer
+        layerNames: layer.layers, // Array of WMS layer names from the layer
+        serviceId: service.id,
+        transparency: layer.transparency,
+        order: layer.order
       };
     }
 
@@ -577,13 +594,17 @@ export class VirtualWmsCapabilitiesService {
         // Abstract will be enriched from WMS capabilities in patchRasterGetInfo
         // For now, set to empty string - it will be populated from real WMS capabilities when available
         layer.Abstract = '';
-        layer.queryable = true;
+        layer.queryable = isProfileLayerQueryable(appLayer);
 
         // Get CRS from service
         const service = apiConfig.services.find(
           (s) => s.id === appLayer.service
         );
         layer.CRS = this.getLayerCRS(appLayer, service, defaultCRS);
+        VirtualWmsCapabilitiesService.appendProfileOgcUrlsToLayer(
+          layer,
+          appLayer
+        );
       } else {
         // Return null to exclude node from capabilities tree
         return null;
@@ -594,6 +615,54 @@ export class VirtualWmsCapabilitiesService {
     }
 
     return layer;
+  }
+
+  /**
+   * Applies profile {@link AppLayer#metadataURL} / {@link AppLayer#datasetURL} to OGC
+   * {@code MetadataURL} / {@code DataURL} on a synthetic layer (same semantics as
+   * real GetCapabilities post-processing: property present + non-empty replaces;
+   * present + empty removes; omitted leaves the layer unchanged for that field).
+   */
+  private static appendProfileOgcUrlsToLayer(
+    layer: WMSLayer,
+    appLayer: AppLayer
+  ): void {
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'metadataURL')) {
+      const raw = appLayer.metadataURL;
+      const md =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (md) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('metadata', md),
+          OnlineResource: { 'xlink:href': md }
+        };
+        layer.MetadataURL = [entry];
+      } else {
+        delete layer.MetadataURL;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'datasetURL')) {
+      const raw = appLayer.datasetURL;
+      const du =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (du) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('download', du),
+          OnlineResource: { 'xlink:href': du }
+        };
+        layer.DataURL = [entry];
+      } else {
+        delete layer.DataURL;
+      }
+    }
   }
 
   /**

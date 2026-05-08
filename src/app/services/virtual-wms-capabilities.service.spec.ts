@@ -1,11 +1,20 @@
 import { TestBed } from '@angular/core/testing';
 
 import { AppCfg } from '@api/model/app-cfg';
+import { TranslateService } from '@ngx-translate/core';
 
+
+import { ConfigLookupService } from './config-lookup.service';
+import { LanguageService } from './language.service';
+import { LayerInfoService } from './layer-info.service';
+import { RasterLayerService } from './raster-layer.service';
 import { VirtualWmsCapabilitiesService } from './virtual-wms-capabilities.service';
+import { WMSCapabilities } from '../types/wms-capabilities';
 
 describe('VirtualWmsCapabilitiesService', () => {
   let service: VirtualWmsCapabilitiesService;
+  let rasterService: RasterLayerService;
+  let configLookup: ConfigLookupService;
   let mockAppCfg: AppCfg;
 
   beforeEach(() => {
@@ -13,8 +22,25 @@ describe('VirtualWmsCapabilitiesService', () => {
      
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [
+        VirtualWmsCapabilitiesService,
+        RasterLayerService,
+        ConfigLookupService,
+        LayerInfoService,
+        {
+          provide: TranslateService,
+          useValue: { instant: (k: string) => k }
+        },
+        {
+          provide: LanguageService,
+          useValue: { getCurrentLanguage: () => 'en' }
+        }
+      ]
+    });
     service = TestBed.inject(VirtualWmsCapabilitiesService);
+    rasterService = TestBed.inject(RasterLayerService);
+    configLookup = TestBed.inject(ConfigLookupService);
 
     // Create comprehensive mock AppCfg
     mockAppCfg = {
@@ -33,7 +59,9 @@ describe('VirtualWmsCapabilitiesService', () => {
           id: 'layer-1',
           title: 'Layer 1',
           layers: ['wms-layer-1'],
-          service: 'service-1'
+          service: 'service-1',
+          metadataURL: 'https://example.com/metadata.xml',
+          datasetURL: 'https://example.com/data.zip'
         },
         {
           id: 'layer-2',
@@ -159,6 +187,45 @@ describe('VirtualWmsCapabilitiesService', () => {
       if (leafNode) {
         expect(leafNode.Name).toBeDefined();
       }
+    });
+
+    it('should emit MetadataURL and DataURL on leaf layers from profile', () => {
+      const capabilities = service.generateCapabilities('node-1', mockAppCfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf).toBeDefined();
+      expect(leaf!.MetadataURL).toEqual([
+        {
+          Format: 'text/xml',
+          OnlineResource: { 'xlink:href': 'https://example.com/metadata.xml' }
+        }
+      ]);
+      expect(leaf!.DataURL).toEqual([
+        {
+          Format: 'application/zip',
+          OnlineResource: { 'xlink:href': 'https://example.com/data.zip' }
+        }
+      ]);
+    });
+
+    it('sets leaf queryable true when profile omits queryableFeatureEnabled', () => {
+      const capabilities = service.generateCapabilities('node-1', mockAppCfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf?.queryable).toBe(true);
+    });
+
+    it('sets leaf queryable false when profile sets queryableFeatureEnabled false', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1' ? { ...l, queryableFeatureEnabled: false } : l
+        )
+      };
+      const capabilities = service.generateCapabilities('node-1', cfg);
+      const rootLayer = capabilities.Capability.Layer;
+      const leaf = rootLayer.Layer?.find((l) => l.Name === 'node-3');
+      expect(leaf?.queryable).toBe(false);
     });
 
     it('should throw error for non-existent node', () => {
@@ -504,6 +571,7 @@ describe('VirtualWmsCapabilitiesService', () => {
       expect(config?.url).toBe('http://example.com/wms');
       expect(config?.type).toBe('WMS');
       expect(config?.layerNames).toEqual(['wms-layer-1']);
+      expect(config?.serviceId).toBe('service-1');
     });
 
     it('should return null for node without resource', () => {
@@ -1038,6 +1106,130 @@ describe('VirtualWmsCapabilitiesService', () => {
       expect(titles).toContain('Folder Node');
       expect(titles).toContain('Leaf Node 1');
       expect(titles).toContain('Leaf Node 2');
+    });
+  });
+
+  describe('scale denominators', () => {
+    const leafFromNode3 = (cfg: AppCfg) => {
+      configLookup.initialize(cfg);
+      const caps = service.generateCapabilities('node-3', cfg);
+      const processed = rasterService.applyVirtualCatalogProfileScaleDenominators(
+        caps,
+        cfg
+      ) as WMSCapabilities;
+      const inner = processed.Capability?.Layer?.Layer?.[0];
+      if (!inner) {
+        throw new Error('Expected leaf under root');
+      }
+      return inner;
+    };
+
+    it('emits MinScaleDenominator and MaxScaleDenominator for positive profile values', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1'
+            ? {
+                ...l,
+                minScaleDenominator: 500,
+                maxScaleDenominator: 10000
+              }
+            : l
+        )
+      };
+      const leaf = leafFromNode3(cfg);
+      expect(leaf.MinScaleDenominator).toBe(500);
+      expect(leaf.MaxScaleDenominator).toBe(10000);
+    });
+
+    it('omits denominators when unset on AppLayer', () => {
+      const leaf = leafFromNode3(mockAppCfg);
+      expect(leaf).not.toHaveProperty('MinScaleDenominator');
+      expect(leaf).not.toHaveProperty('MaxScaleDenominator');
+    });
+
+    it('omits denominators when zero', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1'
+            ? { ...l, minScaleDenominator: 0, maxScaleDenominator: 0 }
+            : l
+        )
+      };
+      const leaf = leafFromNode3(cfg);
+      expect(leaf).not.toHaveProperty('MinScaleDenominator');
+      expect(leaf).not.toHaveProperty('MaxScaleDenominator');
+    });
+
+    it('omits denominators when negative', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1'
+            ? { ...l, minScaleDenominator: -1, maxScaleDenominator: -100 }
+            : l
+        )
+      };
+      const leaf = leafFromNode3(cfg);
+      expect(leaf).not.toHaveProperty('MinScaleDenominator');
+      expect(leaf).not.toHaveProperty('MaxScaleDenominator');
+    });
+
+    it('omits denominators for malformed numeric payloads', () => {
+      const badLayer = {
+        ...mockAppCfg.layers.find((l) => l.id === 'layer-1')!,
+        minScaleDenominator: '500' as unknown as number,
+        maxScaleDenominator: NaN
+      };
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) => (l.id === 'layer-1' ? badLayer : l))
+      };
+      const leaf = leafFromNode3(cfg);
+      expect(leaf).not.toHaveProperty('MinScaleDenominator');
+      expect(leaf).not.toHaveProperty('MaxScaleDenominator');
+    });
+
+    it('emits only MinScaleDenominator when max is absent', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-1'
+            ? { ...l, minScaleDenominator: 400 }
+            : l
+        )
+      };
+      const leaf = leafFromNode3(cfg);
+      expect(leaf.MinScaleDenominator).toBe(400);
+      expect(leaf).not.toHaveProperty('MaxScaleDenominator');
+    });
+
+    it('does not put denominators on folder WMS layers', () => {
+      const cfg: AppCfg = {
+        ...mockAppCfg,
+        layers: mockAppCfg.layers.map((l) =>
+          l.id === 'layer-2'
+            ? {
+                ...l,
+                minScaleDenominator: 1000,
+                maxScaleDenominator: 500000
+              }
+            : l
+        )
+      };
+      configLookup.initialize(cfg);
+      const caps = service.generateCapabilities('node-2', cfg);
+      const processed = rasterService.applyVirtualCatalogProfileScaleDenominators(
+        caps,
+        cfg
+      ) as WMSCapabilities;
+      const folderRoot = processed.Capability!.Layer;
+      expect(folderRoot).not.toHaveProperty('MinScaleDenominator');
+      expect(folderRoot).not.toHaveProperty('MaxScaleDenominator');
+      const leaf = folderRoot.Layer?.[0];
+      expect(leaf?.MinScaleDenominator).toBe(1000);
+      expect(leaf?.MaxScaleDenominator).toBe(500000);
     });
   });
 });

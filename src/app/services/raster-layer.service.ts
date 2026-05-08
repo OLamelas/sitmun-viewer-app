@@ -4,17 +4,21 @@ import { AppCfg, AppLayer, AppService } from '@api/model/app-cfg';
 
 import { ConfigLookupService } from './config-lookup.service';
 import { LanguageService } from './language.service';
-import { LayerInfoService } from './layer-info.service';
+import { inferOgcLinkFormat, LayerInfoService } from './layer-info.service';
+import { isProfileLayerQueryable } from './profile-layer-queryable';
 import {
   VirtualWmsCapabilitiesService,
   RealLayerConfig
 } from './virtual-wms-capabilities.service';
-import { WMSCapabilities } from '../types/wms-capabilities';
+import {
+  WMSCapabilities,
+  WMSLayer,
+  WmsOnlineResourceLink
+} from '../types/wms-capabilities';
 
 /**
  * Service for Raster layer-specific functionality.
  * Handles WMTS normalization, Raster-specific information extraction, and capabilities processing.
- * TODO: Add unit tests (raster-layer.service.spec.ts)
  */
 @Injectable({
   providedIn: 'root'
@@ -33,30 +37,29 @@ export class RasterLayerService {
    * @param appCfg - Optional app configuration (for virtual service detection)
    * @returns true if the layer is a Raster that will build a WMTS, false otherwise
    */
-  isRasterWmts(
-    layer: { [key: string]: unknown },
-    capabilitiesUrl?: string,
-    appCfg?: AppCfg
-  ): boolean {
-    // Check if layer is a Raster type
+  /**
+   * Check if layer instance is a Raster type (WMS, WMTS, or Raster constructor).
+   */
+  private isRasterLayer(layer: { [key: string]: unknown }): boolean {
     const layerType = (layer as any)['type'];
-    const isRaster =
+    return (
       layerType === 'WMS' ||
       layerType === 'WMTS' ||
       (layer as any).constructor?.name === 'Raster' ||
-      (layer as any).__proto__?.constructor?.name === 'Raster';
+      (layer as any).__proto__?.constructor?.name === 'Raster'
+    );
+  }
 
-    if (!isRaster) {
-      return false;
-    }
+  /**
+   * Resolve the service type for a layer, considering virtual URL resolution.
+   */
+  private resolveServiceType(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): string | undefined {
+    const layerType = (layer as any)['type'];
 
-    // Check service type
-    // 1. Direct check from layer.type property
-    if (layerType === 'WMTS') {
-      return true;
-    }
-
-    // 2. For virtual services, resolve the real service type
     if (
       capabilitiesUrl &&
       appCfg &&
@@ -69,15 +72,46 @@ export class RasterLayerService {
           nodeId,
           appCfg
         );
-        if (realLayerConfig && realLayerConfig.type === 'WMTS') {
-          return true;
+        if (realLayerConfig) {
+          return realLayerConfig.type;
         }
       }
     }
 
-    // 3. Try to get service type from layer options or properties
-    const serviceType =
-      (layer as any).options?.type || (layer as any).serviceType || layerType;
+    return (
+      (layer as any).options?.type ||
+      (layer as any).serviceType ||
+      layerType
+    );
+  }
+
+  /**
+   * True when the layer is a Raster backed by WMS (direct, virtual-resolved, or options.type).
+   */
+  isRasterWms(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): boolean {
+    if (!this.isRasterLayer(layer)) {
+      return false;
+    }
+    const serviceType = this.resolveServiceType(layer, capabilitiesUrl, appCfg);
+    return serviceType === 'WMS';
+  }
+
+  /**
+   * True when the layer is a Raster backed by WMTS.
+   */
+  isRasterWmts(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl?: string,
+    appCfg?: AppCfg
+  ): boolean {
+    if (!this.isRasterLayer(layer)) {
+      return false;
+    }
+    const serviceType = this.resolveServiceType(layer, capabilitiesUrl, appCfg);
     return serviceType === 'WMTS';
   }
 
@@ -153,30 +187,452 @@ export class RasterLayerService {
   }
 
   /**
-   * Process capabilities result for WMTS Raster layers.
-   * If the layer is a Raster that will build WMTS, normalizes BoundingBox for all layers.
+   * Post-process **synthetic** virtual WMS GetCapabilities: merges profile scale denominators onto
+   * leaf {@link WMSLayer} entries (node-id based). Does not run for real service URLs; use
+   * {@link RasterLayerService#processWmtCapabilitiesResult} after HTTP fetch instead.
+   */
+  applyVirtualCatalogProfileScaleDenominators(
+    capabilities: unknown,
+    appCfg: AppCfg
+  ): unknown {
+    this.applyProfileScaleDenominatorsToWmsCapabilities(capabilities, appCfg);
+    return capabilities;
+  }
+
+  /**
+   * Process **real** fetched GetCapabilities for Raster layers (non-virtual URLs only).
+   * WMTS: normalizes BoundingBox; WMS/WMTS: merges profile denominators, {@code Title},
+   * {@code Abstract}, and OGC {@code MetadataURL} / {@code DataURL} on the matched capability
+   * layer when the layer maps to an {@link AppService} in {@link AppCfg} (prefer
+   * {@code layer.options.serviceId} for proxy URLs). Profile string fields use present / non-empty
+   * replace, present / empty remove, and omitted leave the service document unchanged.
    *
    * @param layer - The layer instance
-   * @param capabilitiesUrl - The capabilities URL
+   * @param capabilitiesUrl - The capabilities URL (must not be {@code virtual://…})
    * @param capabilities - The capabilities result object
-   * @param appCfg - Optional app configuration (for virtual service detection)
-   * @returns The processed capabilities result (normalized if WMTS, original otherwise)
+   * @param appCfg - App configuration
+   * @returns The processed capabilities result (modified in place when applicable)
    */
-  processWmtsCapabilitiesResult(
+  processWmtCapabilitiesResult(
     layer: { [key: string]: unknown },
     capabilitiesUrl: string | undefined,
     capabilities: unknown,
     appCfg?: AppCfg
   ): unknown {
+    if (
+      !capabilitiesUrl ||
+      !capabilities ||
+      this.virtualWmsService.isVirtualServiceUrl(capabilitiesUrl)
+    ) {
+      return capabilities;
+    }
+
     const isRasterWmts = this.isRasterWmts(layer, capabilitiesUrl, appCfg);
+    const isRasterWms = this.isRasterWms(layer, capabilitiesUrl, appCfg);
 
     if (isRasterWmts) {
-      // Normalize BoundingBox for all layers in WMTS capabilities
       this.normalizeAllWmtsLayersBoundingBox(capabilities);
     }
 
-    // Return the capabilities (modified in place if WMTS, original otherwise)
+    if (!appCfg) {
+      return capabilities;
+    }
+
+    const matchedService = this.resolveConfiguredServiceForCapabilities(
+      layer,
+      capabilitiesUrl,
+      appCfg
+    );
+
+    if (matchedService && (isRasterWms || isRasterWmts)) {
+      this.applyConfiguredProfileScaleDenominators(
+        capabilities,
+        appCfg,
+        matchedService.id,
+        isRasterWms,
+        isRasterWmts
+      );
+    }
+
     return capabilities;
+  }
+
+  /**
+   * Resolve {@link AppService} for this capabilities fetch: primary {@code options.serviceId}
+   * (or legacy {@code options.service} when it equals an AppCfg service id), else URL match.
+   */
+  private resolveConfiguredServiceForCapabilities(
+    layer: { [key: string]: unknown },
+    capabilitiesUrl: string,
+    appCfg: AppCfg
+  ): AppService | undefined {
+    const opts = (layer as { options?: Record<string, unknown> }).options;
+    const fromOpts = opts?.['serviceId'] ?? opts?.['service'];
+    if (typeof fromOpts === 'string' && fromOpts.length > 0) {
+      const byId = appCfg.services.find((s) => s.id === fromOpts);
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const normalizeUrl = (u: string): string =>
+      u
+        .trim()
+        .replace(/\/+$/, '')
+        .split('?')[0]
+        .toLowerCase();
+
+    // Try URLs in order of preference
+    const layerUrl = (layer as { url?: unknown }).url;
+    const optUrl = opts?.['url'];
+    const candidates = [
+      capabilitiesUrl,
+      typeof layerUrl === 'string' ? layerUrl : null,
+      typeof optUrl === 'string' ? optUrl : null
+    ].filter((u): u is string => Boolean(u));
+
+    for (const raw of candidates) {
+      const normalized = normalizeUrl(raw);
+      if (normalized) {
+        const match = appCfg.services.find(
+          (s) => normalizeUrl(String(s.url ?? '')) === normalized
+        );
+        if (match) {
+          return match;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Merge {@link AppCfg} raster layer settings onto fetched capabilities for a matched service.
+   * Delegates to {@link #applyAppProfileToRealWmsCapabilityLayers} or
+   * {@link #applyAppProfileToRealWmtsCapabilityLayers} by layer type.
+   */
+  private applyConfiguredProfileScaleDenominators(
+    capabilities: unknown,
+    appCfg: AppCfg,
+    serviceId: string,
+    isRasterWms: boolean,
+    isRasterWmts: boolean
+  ): void {
+    const wmsRoot = (capabilities as WMSCapabilities | undefined)?.Capability
+      ?.Layer;
+    if (isRasterWms && wmsRoot) {
+      this.applyAppProfileToRealWmsCapabilityLayers(
+        capabilities,
+        serviceId,
+        appCfg
+      );
+    }
+
+    const wmtsLayers = (
+      capabilities as {
+        Contents?: { Layer?: unknown[] };
+      }
+    )?.Contents?.Layer;
+    if (isRasterWmts && Array.isArray(wmtsLayers)) {
+      this.applyAppProfileToRealWmtsCapabilityLayers(
+        capabilities,
+        serviceId,
+        appCfg
+      );
+    }
+  }
+
+  /**
+   * Check if a WMS layer name matches a configured layer name.
+   * Handles namespaced layer names (e.g., "workspace:layer" matches "layer").
+   */
+  private wmsLayerNameMatchesConfiguredName(
+    wmsName: string,
+    configuredName: string
+  ): boolean {
+    const ln = configuredName.trim();
+    if (!ln || !wmsName) {
+      return false;
+    }
+    return (
+      wmsName === ln ||
+      wmsName.endsWith(`:${ln}`) ||
+      ln === wmsName.split(':').pop()
+    );
+  }
+
+  /**
+   * Apply scale denominators and profile fields to real WMS capability layers by matching layer names.
+   * Walks the WMS layer tree and applies scales, `Title`, `Abstract`, and OGC `MetadataURL` / `DataURL`
+   * on each matched {@link WMSLayer}. String fields follow {@link #mergeProfileTitleAbstractOntoLayer} and
+   * {@link #mergeProfileOgcOnlineResourceLinks}: property present + non-empty replaces; present + empty
+   * removes; property absent leaves the fetched value unchanged.
+   */
+  private applyAppProfileToRealWmsCapabilityLayers(
+    capabilities: unknown,
+    serviceId: string,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as WMSCapabilities | null | undefined;
+    const root = caps?.Capability?.Layer;
+    if (!root) {
+      return;
+    }
+    const appLayersForService = appCfg.layers.filter(
+      (l) => l.service === serviceId
+    );
+    const visit = (ly: WMSLayer): void => {
+      const name = ly.Name;
+      if (typeof name === 'string' && name.length > 0) {
+        for (const appLayer of appLayersForService) {
+          const matched = (appLayer.layers ?? []).some((ln) =>
+            this.wmsLayerNameMatchesConfiguredName(name, ln)
+          );
+          if (matched) {
+            if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+              ly.MinScaleDenominator = appLayer.minScaleDenominator;
+            }
+            if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+              ly.MaxScaleDenominator = appLayer.maxScaleDenominator;
+            }
+            this.mergeProfileTitleAbstractOntoLayer(ly, appLayer);
+            this.mergeProfileOgcOnlineResourceLinks(ly, appLayer);
+            ly.queryable = isProfileLayerQueryable(appLayer);
+            break;
+          }
+        }
+      }
+      const children = ly.Layer;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          visit(child);
+        }
+      }
+    };
+    visit(root);
+  }
+
+  /**
+   * Apply scale denominators, {@code Title}, {@code Abstract}, and OGC-style {@code MetadataURL} /
+   * {@code DataURL} to real WMTS capability layer entries by matching layer identifiers.
+   * Title, abstract, and URL fields use {@link #mergeProfileTitleAbstractOntoLayer} and
+   * {@link #mergeProfileOgcOnlineResourceLinks}.
+   */
+  private applyAppProfileToRealWmtsCapabilityLayers(
+    capabilities: unknown,
+    serviceId: string,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as {
+      Contents?: { Layer?: Array<Record<string, unknown>> };
+    };
+    const layers = caps?.Contents?.Layer;
+    if (!Array.isArray(layers)) {
+      return;
+    }
+    this.ensureConfigLookupInitialized(appCfg);
+    for (const wmtsLayer of layers) {
+      const rawId = wmtsLayer['Identifier'];
+      const identifier =
+        typeof rawId === 'string'
+          ? rawId
+          : rawId &&
+              typeof rawId === 'object' &&
+              rawId !== null &&
+              'value' in (rawId as object)
+            ? String((rawId as { value?: unknown }).value ?? '')
+            : String(rawId ?? '');
+      const appLayer = this.findAppLayerForWmtsIdentifier(
+        identifier,
+        appCfg,
+        serviceId
+      );
+      if (!appLayer) {
+        continue;
+      }
+      if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+        wmtsLayer['MinScaleDenominator'] = appLayer.minScaleDenominator;
+      }
+      if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+        wmtsLayer['MaxScaleDenominator'] = appLayer.maxScaleDenominator;
+      }
+      this.mergeProfileTitleAbstractOntoLayer(wmtsLayer, appLayer);
+      this.mergeProfileOgcOnlineResourceLinks(wmtsLayer, appLayer);
+    }
+  }
+
+  /**
+   * Applies profile {@link AppLayer#title} as {@code Title} and {@link AppLayer#description} as
+   * {@code Abstract} on the capability layer (WMS or WMTS record). Same rules as
+   * {@link #mergeProfileOgcOnlineResourceLinks}.
+   */
+  private mergeProfileTitleAbstractOntoLayer(
+    target: WMSLayer | Record<string, unknown>,
+    appLayer: AppLayer
+  ): void {
+    const t = target as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'title')) {
+      const raw = appLayer.title;
+      const s =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (s) {
+        t['Title'] = s;
+      } else {
+        delete t['Title'];
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'description')) {
+      const raw = appLayer.description;
+      const s =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (s) {
+        t['Abstract'] = s;
+      } else {
+        delete t['Abstract'];
+      }
+    }
+  }
+
+  /**
+   * Applies profile {@link AppLayer#metadataURL} / {@link AppLayer#datasetURL} to OGC
+   * {@code MetadataURL} / {@code DataURL} on the capability layer. If a property is
+   * present on {@code appLayer} (see {@code Object.prototype.hasOwnProperty}), it replaces the capability
+   * value: non-empty after trim writes one entry; {@code null}, {@code undefined}, empty string, or
+   * whitespace-only removes the key so upstream GetCapabilities links are not left in place.
+   * Omitted JSON keys leave the fetched document unchanged for that field (same idea as
+   * {@link #enrichRasterLayerInfo}).
+   */
+  private mergeProfileOgcOnlineResourceLinks(
+    target: WMSLayer | Record<string, unknown>,
+    appLayer: AppLayer
+  ): void {
+    const t = target as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'metadataURL')) {
+      const raw = appLayer.metadataURL;
+      const md =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (md) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('metadata', md),
+          OnlineResource: { 'xlink:href': md }
+        };
+        t['MetadataURL'] = [entry];
+      } else {
+        delete t['MetadataURL'];
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(appLayer, 'datasetURL')) {
+      const raw = appLayer.datasetURL;
+      const du =
+        raw == null
+          ? ''
+          : typeof raw === 'string'
+            ? raw.trim()
+            : String(raw).trim();
+      if (du) {
+        const entry: WmsOnlineResourceLink = {
+          Format: inferOgcLinkFormat('download', du),
+          OnlineResource: { 'xlink:href': du }
+        };
+        t['DataURL'] = [entry];
+      } else {
+        delete t['DataURL'];
+      }
+    }
+  }
+
+  private ensureConfigLookupInitialized(appCfg: AppCfg): void {
+    if (!this.configLookup.isReady()) {
+      this.configLookup.initialize(appCfg);
+    }
+  }
+
+  /**
+   * Check if a value is a valid scale denominator (positive finite number).
+   */
+  private isPositiveFiniteDenominator(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+
+  /**
+   * Walk WMS Capability.Layer tree and set MinScaleDenominator / MaxScaleDenominator from
+   * {@link AppCfg} for leaf layers whose {@link WMSLayer#Name} is a catalog node id with a resource.
+   */
+  private applyProfileScaleDenominatorsToWmsCapabilities(
+    capabilities: unknown,
+    appCfg: AppCfg
+  ): void {
+    const caps = capabilities as WMSCapabilities | null | undefined;
+    const root = caps?.Capability?.Layer;
+    if (!root) {
+      return;
+    }
+    this.ensureConfigLookupInitialized(appCfg);
+    const visit = (ly: WMSLayer): void => {
+      const name = ly.Name;
+      if (typeof name === 'string' && name.length > 0) {
+        const node = this.configLookup.findNode(name);
+        if (node?.resource) {
+          const appLayer = appCfg.layers.find((l) => l.id === node.resource);
+          if (appLayer) {
+            if (this.isPositiveFiniteDenominator(appLayer.minScaleDenominator)) {
+              ly.MinScaleDenominator = appLayer.minScaleDenominator;
+            }
+            if (this.isPositiveFiniteDenominator(appLayer.maxScaleDenominator)) {
+              ly.MaxScaleDenominator = appLayer.maxScaleDenominator;
+            }
+          }
+        }
+      }
+      const children = ly.Layer;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          visit(child);
+        }
+      }
+    };
+    visit(root);
+  }
+
+  private findAppLayerForWmtsIdentifier(
+    identifier: string,
+    appCfg: AppCfg,
+    serviceId?: string
+  ): AppLayer | undefined {
+    const id = identifier.trim();
+    if (!id) {
+      return undefined;
+    }
+    const matchesService = (appLayer: AppLayer) =>
+      serviceId === undefined || appLayer.service === serviceId;
+
+    const exact = appCfg.layers.find(
+      (appLayer) =>
+        matchesService(appLayer) &&
+        (appLayer.layers ?? []).some((ln) => ln.trim() === id)
+    );
+    if (exact) {
+      return exact;
+    }
+    return appCfg.layers.find(
+      (appLayer) =>
+        matchesService(appLayer) &&
+        (appLayer.layers ?? []).some((ln) =>
+          this.wmsLayerNameMatchesConfiguredName(id, ln)
+        )
+    );
   }
 
   /**
@@ -311,32 +767,90 @@ export class RasterLayerService {
       enrichedInfo.url = realLayerConfig.url;
     }
 
-    // Metadata: from layer.metadataUrl (if available in app config)
-    if (layerConfig && (layerConfig as any).metadataUrl) {
-      const metadataUrls = Array.isArray((layerConfig as any).metadataUrl)
-        ? (layerConfig as any).metadataUrl
-        : [(layerConfig as any).metadataUrl];
+    // Metadata: from profile (metadataURL; legacy metadataUrl for hand-edited JSON).
+    // If the profile field is present it replaces upstream MetadataURL, even when empty.
+    const hasProfileMetadataURL =
+      !!layerConfig &&
+      (Object.prototype.hasOwnProperty.call(layerConfig, 'metadataURL') ||
+        Object.prototype.hasOwnProperty.call(layerConfig, 'metadataUrl'));
+    const profileMetadataRaw =
+      layerConfig &&
+      (layerConfig.metadataURL ?? (layerConfig as { metadataUrl?: string }).metadataUrl);
+    if (layerConfig && profileMetadataRaw) {
+      const metadataUrls = Array.isArray(profileMetadataRaw)
+        ? profileMetadataRaw
+        : [profileMetadataRaw];
 
-      enrichedInfo.metadata = metadataUrls.map((md: any) => ({
-        format: md.format || 'text/html',
-        type: md.type || 'simple',
-        url: typeof md === 'string' ? md : md.url,
-        formatDescription: md.formatDescription || 'Metadata'
-      }));
+      enrichedInfo.metadata = metadataUrls.map((md: unknown) => {
+        const url =
+          typeof md === 'string'
+            ? md.trim()
+            : String((md as { url?: string }).url ?? '').trim();
+        const formatStr =
+          typeof md === 'object' && md !== null && 'format' in md
+            ? inferOgcLinkFormat(
+                'metadata',
+                url,
+                String((md as { format?: string }).format ?? '')
+              )
+            : inferOgcLinkFormat('metadata', url);
+        const explicitFd =
+          typeof md === 'object' && md !== null && 'formatDescription' in md
+            ? String((md as { formatDescription?: string }).formatDescription ?? '')
+            : '';
+        return {
+          format: formatStr,
+          type:
+            typeof md === 'object' && md !== null && 'type' in md
+              ? String((md as { type?: string }).type || 'simple')
+              : 'simple',
+          url,
+          formatDescription:
+            explicitFd ||
+            this.layerInfoService.describeOgcLinkFormat('metadata', formatStr)
+        };
+      }).filter((md: { url: string }) => md.url.length > 0);
     }
 
-    // DataUrl: from layer.datasetURL (if available in app config)
-    if (layerConfig && (layerConfig as any).datasetURL) {
-      const dataUrls = Array.isArray((layerConfig as any).datasetURL)
-        ? (layerConfig as any).datasetURL
-        : [(layerConfig as any).datasetURL];
+    // DataUrl: from profile datasetURL. If present it replaces upstream DataURL, even when empty.
+    const hasProfileDatasetURL =
+      !!layerConfig &&
+      Object.prototype.hasOwnProperty.call(layerConfig, 'datasetURL');
+    const profileDatasetRaw = layerConfig?.datasetURL as unknown;
+    if (layerConfig && profileDatasetRaw) {
+      const dataUrls = Array.isArray(profileDatasetRaw)
+        ? profileDatasetRaw
+        : [profileDatasetRaw];
 
-      enrichedInfo.dataUrl = dataUrls.map((du: any) => ({
-        format: du.format || 'application/zip',
-        type: du.type || 'simple',
-        url: typeof du === 'string' ? du : du.url,
-        formatDescription: du.formatDescription || 'Download'
-      }));
+      enrichedInfo.dataUrl = dataUrls.map((du: unknown) => {
+        const url =
+          typeof du === 'string'
+            ? du.trim()
+            : String((du as { url?: string }).url ?? '').trim();
+        const formatStr =
+          typeof du === 'object' && du !== null && 'format' in du
+            ? inferOgcLinkFormat(
+                'download',
+                url,
+                String((du as { format?: string }).format ?? '')
+              )
+            : inferOgcLinkFormat('download', url);
+        const explicitFd =
+          typeof du === 'object' && du !== null && 'formatDescription' in du
+            ? String((du as { formatDescription?: string }).formatDescription ?? '')
+            : '';
+        return {
+          format: formatStr,
+          type:
+            typeof du === 'object' && du !== null && 'type' in du
+              ? String((du as { type?: string }).type || 'simple')
+              : 'simple',
+          url,
+          formatDescription:
+            explicitFd ||
+            this.layerInfoService.describeOgcLinkFormat('download', formatStr)
+        };
+      }).filter((du: { url: string }) => du.url.length > 0);
     }
 
     // Contact information: from app config
@@ -402,6 +916,24 @@ export class RasterLayerService {
             if (abstractText) {
               enrichedInfo.abstract = abstractText;
             }
+          }
+
+          const ogcLinks = this.layerInfoService.extractOgcMetadataAndDataUrls(
+            wmsLayer as WMSLayer
+          );
+          if (
+            !hasProfileMetadataURL &&
+            (!enrichedInfo.metadata || enrichedInfo.metadata.length === 0) &&
+            ogcLinks.metadata.length > 0
+          ) {
+            enrichedInfo.metadata = ogcLinks.metadata;
+          }
+          if (
+            !hasProfileDatasetURL &&
+            (!enrichedInfo.dataUrl || enrichedInfo.dataUrl.length === 0) &&
+            ogcLinks.dataUrl.length > 0
+          ) {
+            enrichedInfo.dataUrl = ogcLinks.dataUrl;
           }
         }
       }

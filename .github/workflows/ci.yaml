@@ -14,27 +14,29 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Use Node.js 18
+    - name: Use Node.js 20.19
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20.19'
         cache: 'npm'
-        
+
     - name: Before install
       run: npm set //npm.pkg.github.com/:_authToken ${{secrets.TOKEN_FOR_WORKFLOWS}}
-    
+
     - name: Install dependencies
       run: npm ci
-    
+
+    - name: Lint
+      run: npm run lint
+
     - name: Unit tests
       run: npm run test -- --watch=false --coverage
-      continue-on-error: true
-    
+
     - name: Build for deployment
-      run: npm run build -- --configuration=testdeployment --base-href=/sitmun-viewer-app/
+      run: npm run build -- --configuration=production --base-href=/sitmun-viewer-app/
       env:
         NODE_OPTIONS: "--openssl-legacy-provider --max-old-space-size=8192"
-    
+
     - name: Validate build artifacts
       run: |
         if [ ! -d "dist/viewer-app" ]; then
@@ -46,7 +48,7 @@ jobs:
           exit 1
         fi
         echo "✓ Build artifacts validated"
-    
+
     - name: Deploy to GitHub pages
       env:
         USERNAME: ${{secrets.USERNAME_FOR_WORKFLOWS}}
@@ -55,4 +57,3 @@ jobs:
         CI: true
       run: ./scripts/deploy.sh
       shell: bash
-

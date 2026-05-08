@@ -6,11 +6,13 @@ import { AppCfg, AppTasks } from '@api/model/app-cfg';
 import { BasemapSelectorControlHandler } from './basemap-selector-control.handler';
 import { AppConfigService } from '../../services/app-config.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
+import { SitnaCapabilitiesInterceptor } from '../../services/sitna-capabilities-interceptor.service';
 
 describe('BasemapSelectorControlHandler', () => {
   let handler: BasemapSelectorControlHandler;
   let mockSitnaApi: jest.Mocked<SitnaApiService>;
   let mockAppConfigService: jest.Mocked<AppConfigService>;
+  let mockInterceptor: jest.Mocked<SitnaCapabilitiesInterceptor>;
   let mockAppCfg: AppCfg;
 
   beforeEach(() => {
@@ -30,12 +32,20 @@ describe('BasemapSelectorControlHandler', () => {
       div: 'tc-slot-bms'
     });
 
+    mockInterceptor = {
+      ensurePatched: jest.fn().mockResolvedValue(undefined),
+      restore: jest.fn()
+    } as Partial<
+      jest.Mocked<SitnaCapabilitiesInterceptor>
+    > as jest.Mocked<SitnaCapabilitiesInterceptor>;
+
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
       providers: [
         BasemapSelectorControlHandler,
         { provide: SitnaApiService, useValue: mockSitnaApi },
-        { provide: AppConfigService, useValue: mockAppConfigService }
+        { provide: AppConfigService, useValue: mockAppConfigService },
+        { provide: SitnaCapabilitiesInterceptor, useValue: mockInterceptor }
       ]
     });
 
@@ -153,6 +163,36 @@ describe('BasemapSelectorControlHandler', () => {
       const config = handler.buildConfiguration(task, context);
       expect(config).toBeDefined();
       expect(config?.div).toBe('tc-slot-bms');
+    });
+  });
+
+  describe('needsBootstrap()', () => {
+    const eligibility = {
+      isEnabledByDefault: () => false
+    };
+
+    it('returns true when a basemapSelector task is present', () => {
+      const tasks: AppTasks[] = [
+        { 'ui-control': 'sitna.basemapSelector' } as any
+      ];
+      expect(handler.needsBootstrap!(tasks, eligibility)).toBe(true);
+    });
+
+    it('returns false when no basemapSelector task is present', () => {
+      const tasks: AppTasks[] = [{ 'ui-control': 'sitna.search' } as any];
+      expect(handler.needsBootstrap!(tasks, eligibility)).toBe(false);
+    });
+
+    it('returns false for an empty task list', () => {
+      expect(handler.needsBootstrap!([], eligibility)).toBe(false);
+    });
+  });
+
+  describe('applyBootstrap()', () => {
+    it('delegates to SitnaCapabilitiesInterceptor.ensurePatched with the context', async () => {
+      await handler.applyBootstrap!(mockAppCfg);
+      expect(mockInterceptor.ensurePatched).toHaveBeenCalledTimes(1);
+      expect(mockInterceptor.ensurePatched).toHaveBeenCalledWith(mockAppCfg);
     });
   });
 });

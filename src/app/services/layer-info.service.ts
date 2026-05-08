@@ -1,15 +1,70 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
+
+import { TranslateService } from '@ngx-translate/core';
+
+import {
+  WMSLayer,
+  WmsOnlineResourceLink
+} from '../types/wms-capabilities';
+
+/** Link shape for layer catalog info modal (Metadata / Download). */
+export interface WmsLayerCatalogLink {
+  url: string;
+  format: string;
+  type: string;
+  formatDescription: string;
+}
+
+export type OgcLinkKind = 'metadata' | 'download';
+
+const extensionFormats: Record<string, string> = {
+  csv: 'text/csv',
+  gml: 'application/gml+xml',
+  geojson: 'application/geo+json',
+  gpkg: 'application/geopackage+sqlite3',
+  htm: 'text/html',
+  html: 'text/html',
+  json: 'application/json',
+  kml: 'application/vnd.google-earth.kml+xml',
+  kmz: 'application/vnd.google-earth.kmz',
+  pdf: 'application/pdf',
+  rdf: 'application/rdf+xml',
+  txt: 'text/plain',
+  xml: 'text/xml',
+  zip: 'application/zip'
+};
+
+/**
+ * Best-effort format policy for profile URLs. Declared OGC/Profile format wins; otherwise use the
+ * URL extension, then a context default so SITNA's {@code tc-file-link} can show an icon badge.
+ */
+export function inferOgcLinkFormat(
+  linkKind: OgcLinkKind,
+  url: string,
+  declaredFormat?: string
+): string {
+  const explicit = declaredFormat?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const path = url.split(/[?#]/, 1)[0] ?? '';
+  const extension = path.match(/\.([A-Za-z0-9-]+)$/)?.[1]?.toLowerCase();
+  if (extension && extensionFormats[extension]) {
+    return extensionFormats[extension];
+  }
+  return linkKind === 'metadata' ? 'text/html' : 'application/octet-stream';
+}
 
 /**
  * Service for general layer information functionality that applies to all layer types.
  * Provides language-aware text extraction and capabilities searching that can be used
  * by any layer type (Raster, Vector, etc.).
- * TODO: Add unit tests (layer-info.service.spec.ts)
  */
 @Injectable({
   providedIn: 'root'
 })
 export class LayerInfoService {
+  private readonly translate = inject(TranslateService);
   /**
    * Extract text in preferred language from multi-language fields.
    * Used for extracting abstracts and titles from WMS capabilities or any multi-language source.
@@ -139,6 +194,77 @@ export class LayerInfoService {
       }
     }
     return null;
+  }
+
+  /**
+   * Parses OGC WMS Layer {@code MetadataURL} / {@code DataURL} into catalog link objects.
+   */
+  extractOgcMetadataAndDataUrls(wmsLayer: WMSLayer | null | undefined): {
+    metadata: WmsLayerCatalogLink[];
+    dataUrl: WmsLayerCatalogLink[];
+  } {
+    return {
+      metadata: this.ogcOnlineResourceLinksToCatalogLinks(
+        wmsLayer?.MetadataURL,
+        'metadata'
+      ),
+      dataUrl: this.ogcOnlineResourceLinksToCatalogLinks(
+        wmsLayer?.DataURL,
+        'download'
+      )
+    };
+  }
+
+  private ogcOnlineResourceLinksToCatalogLinks(
+    field: WmsOnlineResourceLink | WmsOnlineResourceLink[] | undefined,
+    linkKind: 'metadata' | 'download'
+  ): WmsLayerCatalogLink[] {
+    if (field == null) {
+      return [];
+    }
+    const entries = Array.isArray(field) ? field : [field];
+    const out: WmsLayerCatalogLink[] = [];
+    for (const entry of entries) {
+      const href = entry?.OnlineResource?.['xlink:href']?.trim();
+      if (!href) {
+        continue;
+      }
+      const format = inferOgcLinkFormat(linkKind, href, entry.Format);
+      out.push({
+        url: href,
+        format,
+        type: 'simple',
+        formatDescription: this.describeOgcLinkFormat(linkKind, format)
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Locale-aware link label. Uses MIME-specific i18n only when {@code format} is set (e.g. from
+   * OGC GetCapabilities); otherwise generic metadata/download — href alone is not enough to infer type.
+   */
+  describeOgcLinkFormat(linkKind: OgcLinkKind, format: string): string {
+    const mime = (format || '').trim().toLowerCase();
+    if (!mime) {
+      return this.translate.instant(
+        linkKind === 'metadata'
+          ? 'layerCatalog.linkType.metadata'
+          : 'layerCatalog.linkType.download'
+      );
+    }
+    const mimeKey =
+      'layerCatalog.linkType.format.' +
+      mime.replace(/\//g, '_').replace(/\+/g, '_').replace(/\./g, '_');
+    const byMime = this.translate.instant(mimeKey);
+    if (byMime !== mimeKey) {
+      return byMime;
+    }
+    return this.translate.instant(
+      linkKind === 'metadata'
+        ? 'layerCatalog.linkType.metadata'
+        : 'layerCatalog.linkType.download'
+    );
   }
 
   /**

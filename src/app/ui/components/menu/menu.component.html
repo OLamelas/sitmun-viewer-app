@@ -2,7 +2,7 @@
   <!-- Welcome header as disabled menu item -->
   <button mat-menu-item class="menu-header" *ngIf="isConnected">
     <span>
-      {{ 'genericPrivateHeader.hi' | translate : { username: username } }}
+      {{ 'menu.greeting' | translate : { username: username } }}
     </span>
   </button>
 
@@ -24,7 +24,7 @@
     *ngIf="showChangeAppButton"
     (click)="sendChangeAppEvent()">
     <mat-icon>swap_horiz</mat-icon>
-    <span>{{ 'menu.changeApplication' | translate }}</span>
+    <span>{{ 'menu.changeAppOrTerritory' | translate }}</span>
   </button>
 
   <mat-divider
@@ -36,7 +36,9 @@
   <!-- Language selector as menu item with sub-menu -->
   <button
     mat-menu-item
+    #languageMenuTrigger="matMenuTrigger"
     [matMenuTriggerFor]="languageMenu"
+    (mouseenter)="onLanguageButtonMouseEnter()"
     *ngIf="showSwitchLanguageButton && languages !== undefined">
     <!-- Flag icon instead of globe icon -->
     <span class="current-language-icon" *ngIf="getLanguageIcon(currentLang)">
@@ -116,7 +118,7 @@
     *ngIf="!isConnected && showLoginButton"
     (click)="sendLoginEvent()">
     <mat-icon>login</mat-icon>
-    <span>{{ 'loginPage.title' | translate }}</span>
+    <span>{{ 'menu.login' | translate }}</span>
   </button>
 
   <button

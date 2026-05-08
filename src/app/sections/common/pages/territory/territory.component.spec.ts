@@ -4,7 +4,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, ActivatedRoute } from '@angular/router';
 
 import { CommonService } from '@api/services/common.service';
-import { of } from 'rxjs';
+import { TranslateService } from '@ngx-translate/core';
+import { EMPTY, of } from 'rxjs';
 
 import { TerritoryComponent } from './territory.component';
 
@@ -44,7 +45,14 @@ describe('TerritoryComponent', () => {
             back: jest.fn()
           }
         },
-        { provide: CommonService, useValue: mockCommonService }
+        { provide: CommonService, useValue: mockCommonService },
+        {
+          provide: TranslateService,
+          useValue: {
+            onLangChange: EMPTY,
+            instant: (key: string) => key
+          }
+        }
       ]
     });
     fixture = TestBed.createComponent(TerritoryComponent);

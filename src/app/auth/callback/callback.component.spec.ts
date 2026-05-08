@@ -16,8 +16,7 @@ import {
   TranslateModule,
   TranslateService
 } from '@ngx-translate/core';
-import { CookieService } from 'ngx-cookie-service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { NotificationService } from '../../notifications/services/NotificationService';
 
@@ -25,7 +24,6 @@ describe('CallbackComponent', () => {
   let component: CallbackComponent;
   let fixture: ComponentFixture<CallbackComponent>;
   let router: Router;
-  let cookieService: CookieService;
   let notificationService: NotificationService;
   let authService: AuthenticationService<any>;
 
@@ -45,7 +43,6 @@ describe('CallbackComponent', () => {
       ],
       providers: [
         Router,
-        CookieService,
         TranslateService,
         NotificationService,
         AuthenticationService,
@@ -62,7 +59,6 @@ describe('CallbackComponent', () => {
     fixture = TestBed.createComponent(CallbackComponent);
     component = fixture.componentInstance;
     router = TestBed.inject(Router);
-    cookieService = TestBed.inject(CookieService);
     notificationService = TestBed.inject(NotificationService);
     authService = TestBed.inject(AuthenticationService);
     fixture.detectChanges();
@@ -72,17 +68,15 @@ describe('CallbackComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should access dashboard if token exists', () => {
-    jest.spyOn(cookieService, 'get').mockReturnValue('token123');
-    const loginSpy = jest
+  it('should authorize and redirect if token is valid', () => {
+    jest
       .spyOn(authService, 'authorizeOidcUser')
-      .mockReturnValue(undefined);
+      .mockReturnValue(of(undefined));
     const navSpy = jest
       .spyOn(authService, 'loginRedirect')
       .mockReturnValue(undefined);
     component.ngOnInit();
     expect(component.messageKey).toBe('callback.redirect');
-    expect(loginSpy).toHaveBeenCalledWith('token123');
     expect(navSpy).toHaveBeenCalledWith({
       snapshot: {
         queryParams: {},
@@ -93,8 +87,10 @@ describe('CallbackComponent', () => {
     });
   });
 
-  it('should navigate to root and show error if token does not exist', fakeAsync(() => {
-    jest.spyOn(cookieService, 'get').mockReturnValue('');
+  it('should navigate to root and show error if authorization fails', fakeAsync(() => {
+    jest
+      .spyOn(authService, 'authorizeOidcUser')
+      .mockReturnValue(throwError(() => new Error('Unauthorized')));
     const navByUrlSpy = jest
       .spyOn(router, 'navigateByUrl')
       .mockResolvedValue(true as any);

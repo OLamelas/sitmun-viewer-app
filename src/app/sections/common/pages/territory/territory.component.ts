@@ -1,5 +1,5 @@
 import { Location } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import {
@@ -7,6 +7,9 @@ import {
   DashboardItem,
   DashboardTypes
 } from '@api/services/common.service';
+import { TranslateService } from '@ngx-translate/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 @Component({
   standalone: false,
@@ -14,16 +17,18 @@ import {
   templateUrl: './territory.component.html',
   styleUrls: ['./territory.component.scss']
 })
-export class TerritoryComponent implements OnInit {
+export class TerritoryComponent implements OnInit, OnDestroy {
   territoryId!: number;
   territory!: DashboardItem;
   applications!: DashboardItem[];
+  private readonly destroy$ = new Subject<void>();
 
   constructor(
     private location: Location,
     private router: Router,
     private route: ActivatedRoute,
-    private commonService: CommonService
+    private commonService: CommonService,
+    private translateService: TranslateService
   ) {}
 
   ngOnInit() {
@@ -31,6 +36,16 @@ export class TerritoryComponent implements OnInit {
       this.territoryId = Number(params['territoryId']);
       this.loadTerritory();
     });
+    this.translateService.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.loadTerritory();
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   loadTerritory() {
