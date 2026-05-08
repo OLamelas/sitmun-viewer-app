@@ -244,5 +244,9 @@
   "layerCatalog.linkType.format.text_html": "HTML",
   "layerCatalog.linkType.format.text_xml": "XML",
   "layerCatalog.linkType.format.application_zip": "ZIP",
-  "layerCatalog.linkType.format.application_octet-stream": "BIN"
+  "layerCatalog.linkType.format.application_octet-stream": "BIN",
+  "moreInfo.show": "Ver contenido",
+  "moreInfo.hide": "Ocultar contenido",
+  "moreInfo.openLink": "Abrir",
+  "moreInfo.downloadFile": "Descargar"
 }
