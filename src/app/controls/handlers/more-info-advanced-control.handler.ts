@@ -22,7 +22,6 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
 
   private readonly miaService = inject(MoreInfoAdvancedService);
   private appConfig: AppCfg | null = null;
-  private sitnaMap: any = null;
   private miaOverlayElement: HTMLElement | null = null;
   private floatingZIndex = 10050;
 
@@ -69,23 +68,6 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
       }
 
       const fiProto = TC?.control?.FeatureInfo?.prototype;
-      if (fiProto?.register && !fiProto.__sitmunMiaRegister) {
-        const registerAdvice = meld.around(
-          fiProto,
-          'register',
-          (jp: MeldJoinPoint) => {
-            const [map] = jp.args as [any];
-            this.sitnaMap = map;
-            return jp.proceedApply(jp.args);
-          }
-        );
-        fiProto.__sitmunMiaRegister = true;
-        this.patchManager.add(() => {
-          meld.remove(registerAdvice);
-          delete fiProto.__sitmunMiaRegister;
-        });
-      }
-
       if (fiProto?.responseCallback && !fiProto.__sitmunMiaResponseCallback) {
         const responseCallbackAdvice = meld.around(
           fiProto,
@@ -111,6 +93,9 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   }
 
   private ensureMiaOverlay(): HTMLElement | null {
+    if (this.miaOverlayElement && !this.miaOverlayElement.isConnected) {
+      this.miaOverlayElement = null;
+    }
     if (this.miaOverlayElement) return this.miaOverlayElement;
 
     const overlay = document.createElement('div');
@@ -146,7 +131,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
       overlay.style.zIndex = String(++this.floatingZIndex);
 
       const target = event.target as HTMLElement | null;
-      const isDragHandle = !!target?.closest('.sitmun-mia-popup-toolbar, .sitmun-mia-header');
+      const isDragHandle = !!target?.closest('.sitmun-mia-popup-toolbar');
       const isButton = !!target?.closest('button, a, input, select, textarea');
       if (!isDragHandle || isButton) return;
 
@@ -197,9 +182,8 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
         const miaTasks = this.miaService.getTasksForCartography(cartographyId);
         if (miaTasks.length === 0) continue;
 
-        const feature = layer.features[0];
-        const featureData = feature.getData ? feature.getData() : feature.data || {};
-        this.openMiaPopup(miaTasks, featureData, layer.name || '', feature);
+        const featureData = layer.features[0].getData ? layer.features[0].getData() : layer.features[0].data || {};
+        this.openMiaPopup(miaTasks, featureData);
         return;
       }
     }
@@ -207,9 +191,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
 
   private openMiaPopup(
     miaTasks: MiaTask[],
-    featureData: Record<string, any>,
-    layerName: string,
-    sitnaFeature: any
+    featureData: Record<string, any>
   ): void {
     const overlay = this.ensureMiaOverlay();
     if (!overlay) return;
@@ -217,9 +199,9 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     const popupId = 'mia-popup-' + Date.now();
     const contentDiv = overlay.querySelector('.tc-ctl-popup-content') as HTMLElement | null;
     if (!contentDiv) return;
-    contentDiv.innerHTML = this.buildMiasHtml(popupId, miaTasks, layerName);
+    contentDiv.innerHTML = this.buildMiasHtml(popupId, miaTasks);
 
-    const position = this.getInitialMiaOverlayPosition(sitnaFeature, overlay);
+    const position = this.getInitialMiaOverlayPosition(overlay);
     this.placeMiaOverlayAt(position.left, position.top);
     overlay.classList.add('sitmun-mia-popup-visible');
     overlay.style.zIndex = String(++this.floatingZIndex);
@@ -228,7 +210,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     this.wireBackendRenderedTabs(contentDiv);
 
     this.miaService.renderMiaTasks(miaTasks, featureData).subscribe({
-      next: (renderedTasks) => this.fillRenderedMiaTasks(popupId, contentDiv, renderedTasks),
+      next: (renderedTasks) => this.fillRenderedMiaTasks(contentDiv, renderedTasks),
       error: (error) => this.fillRenderedMiaError(contentDiv, error?.message || 'MIA rendering failed')
     });
   }
@@ -240,10 +222,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     if (contentDiv) contentDiv.innerHTML = '';
   }
 
-  private getInitialMiaOverlayPosition(
-    sitnaFeature: any,
-    overlay: HTMLElement
-  ): { left: number; top: number } {
+  private getInitialMiaOverlayPosition(overlay: HTMLElement): { left: number; top: number } {
     const width = overlay.offsetWidth || 420;
     const height = overlay.offsetHeight || 260;
     const left = Math.round((window.innerWidth - width) / 2);
@@ -278,29 +257,9 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     };
   }
 
-  private getFeaturePopupCoordinate(sitnaFeature: any): any {
-    if (sitnaFeature?.wrap?._innerCentroid) {
-      return sitnaFeature.wrap._innerCentroid;
-    }
-
-    if (sitnaFeature?.wrap?.getInnerCentroid) {
-      try {
-        return sitnaFeature.wrap.getInnerCentroid();
-      } catch {
-        // Best effort: fall through to geometry alternatives.
-      }
-    }
-
-    const geometry = sitnaFeature?.geometry;
-    if (Array.isArray(geometry) && geometry.length >= 2) return geometry;
-    if (Array.isArray(geometry?.coordinates)) return geometry.coordinates;
-
-    return this.sitnaMap?.wrap?.map?.getView?.().getCenter?.() || null;
-  }
-
-  private buildMiasHtml(popupId: string, miaTasks: MiaTask[], layerName: string): string {
+  private buildMiasHtml(popupId: string, miaTasks: MiaTask[]): string {
     if (miaTasks.length === 1) {
-      return this.buildMiaHtml(this.getMiaPanelId(popupId, 0), miaTasks[0], layerName);
+      return this.buildMiaHtml(miaTasks[0]);
     }
 
     const tabs = miaTasks
@@ -314,14 +273,14 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     const panels = miaTasks
       .map((miaTask, i) => {
         const hidden = i === 0 ? '' : ' style="display:none"';
-        return `<div class="sitmun-mia-main-panel" data-mia-main-panel="${this.getMiaPanelId(popupId, i)}"${hidden}>${this.buildMiaHtml(this.getMiaPanelId(popupId, i), miaTask, layerName)}</div>`;
+        return `<div class="sitmun-mia-main-panel" data-mia-main-panel="${this.getMiaPanelId(popupId, i)}"${hidden}>${this.buildMiaHtml(miaTask)}</div>`;
       })
       .join('');
 
     return `<div class="sitmun-mia-main-tabs-bar" data-mia-main-tabs="${popupId}">${tabs}</div>${panels}`;
   }
 
-  private buildMiaHtml(popupId: string, miaTask: MiaTask, layerName: string): string {
+  private buildMiaHtml(miaTask: MiaTask): string {
     return `<div class="sitmun-mia-body" data-mia-task-id="${this.parseTaskId(miaTask.id)}"><div class="sitmun-mia-loading"><span class="sitmun-mia-spinner"></span> Carregant...</div></div>`;
   }
 
@@ -367,7 +326,6 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   }
 
   private fillRenderedMiaTasks(
-    _popupId: string,
     contentDiv: HTMLElement,
     renderedTasks: MiaRenderedTask[]
   ): void {

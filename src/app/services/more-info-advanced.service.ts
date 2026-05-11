@@ -15,8 +15,6 @@ export interface MiaChildTask {
   name: string;
   order: number;
   childType: 'query' | 'template';
-  scope: string | null;
-  url: string | null;
   parameters: Record<string, any> | null;
   childTaskParameters?: Record<string, Record<string, any>> | null;
 }
@@ -230,8 +228,6 @@ export class MoreInfoAdvancedService {
         name: child.name || '',
         order: typeof child.order === 'number' ? child.order : 999,
         childType: child.childType === 'template' ? 'template' as const : 'query' as const,
-        scope: child.scope || null,
-        url: child.url || null,
         parameters: child.parameters || null,
         childTaskParameters: child.childTaskParameters || null,
       }))

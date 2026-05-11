@@ -140,21 +140,6 @@ body {
   line-height: 1;
 }
 
-.tc-ctl-popup-content .sitmun-mia-header {
-  margin-bottom: 10px;
-}
-
-.tc-ctl-popup-content .sitmun-mia-title {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.tc-ctl-popup-content .sitmun-mia-layer {
-  color: #666;
-  font-size: 0.85rem;
-  margin-top: 2px;
-}
-
 .tc-ctl-popup-content .sitmun-mia-tabs-bar {
   display: flex;
   gap: 4px;
@@ -220,8 +205,7 @@ body {
 }
 
 .tc-ctl-popup-content .sitmun-mia-loading,
-.tc-ctl-popup-content .sitmun-mia-empty,
-.tc-ctl-popup-content .sitmun-mia-redirected {
+.tc-ctl-popup-content .sitmun-mia-empty {
   color: #666;
   font-style: italic;
 }
