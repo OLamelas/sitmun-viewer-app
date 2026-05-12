@@ -1,5 +1,4 @@
 {
-  "genericPrivateHeader.hi": "¡Hola {{username}}!",
   "callback.processing": "Procesando el inicio de sesión...",
   "callback.redirect": "Sesión iniciada! Redirigiendo...",
   "loginPage.logoutText": "Desconexión",
@@ -120,10 +119,11 @@
   "mapPage.title": "Mapa de ejemplo",
   "dashboardDialog.inputPlaceholder": "Buscar",
   "menu.login": "Entrar",
+  "menu.greeting": "¡Hola {{username}}!",
   "menu.hi": "Hola, ",
   "menu.logout": "Cerrar Sesión",
   "menu.dashboard": "Aplicaciones",
-  "menu.changeApplication": "Cambiar",
+  "menu.changeAppOrTerritory": "Cambiar",
   "menu.changeTerritory": "Cambiar territorio",
   "menu.continue": "Continuar",
   "paginate.previous": "Anterior",
@@ -238,5 +238,15 @@
   "systemInfo.errorType.uncaught": "Excepción No Capturada",
   "systemInfo.copyError": "Copiar Error",
   "systemInfo.closeErrorPanel": "Cerrar",
-  "common.button.close": "Cerrar"
+  "common.button.close": "Cerrar",
+  "layerCatalog.linkType.metadata": "Metadatos",
+  "layerCatalog.linkType.download": "Descarga",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN",
+  "moreInfo.show": "Ver contenido",
+  "moreInfo.hide": "Ocultar contenido",
+  "moreInfo.openLink": "Abrir",
+  "moreInfo.downloadFile": "Descargar"
 }

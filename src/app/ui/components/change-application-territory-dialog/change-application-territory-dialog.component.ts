@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { MatDialogRef } from '@angular/material/dialog';
 import { Router } from '@angular/router';
 
@@ -10,6 +10,8 @@ import {
 } from '@api/services/common.service';
 import { NavigationPath } from '@config/app.config';
 import { TranslateService } from '@ngx-translate/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { NotificationService } from 'src/app/notifications/services/NotificationService';
 import { AppConfigService } from 'src/app/services/app-config.service';
 
@@ -19,7 +21,9 @@ import { AppConfigService } from 'src/app/services/app-config.service';
   templateUrl: './change-application-territory-dialog.component.html',
   styleUrls: ['./change-application-territory-dialog.component.scss']
 })
-export class ChangeApplicationTerritoryDialogComponent implements OnInit {
+export class ChangeApplicationTerritoryDialogComponent
+  implements OnInit, OnDestroy
+{
   applicationSelectedId!: string;
   territorySelectedId!: string;
   listApplications!: Array<DashboardItem>;
@@ -35,6 +39,7 @@ export class ChangeApplicationTerritoryDialogComponent implements OnInit {
 
   // Store the last selected territory to restore when territories are loaded
   private lastSelectedTerritoryId = '';
+  private readonly destroy$ = new Subject<void>();
 
   private readonly appConfigService = inject(AppConfigService);
 
@@ -176,6 +181,20 @@ export class ChangeApplicationTerritoryDialogComponent implements OnInit {
   }
 
   ngOnInit() {
+    this.loadDialogData();
+    this.translateService.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.loadDialogData();
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  private loadDialogData(): void {
     // Get applicationID and territoryID from route parameters
     const { applicationId, territoryId } = this.getRouteParams();
     this.applicationSelectedId = applicationId;
@@ -195,6 +214,9 @@ export class ChangeApplicationTerritoryDialogComponent implements OnInit {
     // We get all territories linked to the applicationSelected (only if applicationSelectedId is valid)
     if (this.hasApplication()) {
       this.getAllTerritoriesFromApplicationSelected();
+    } else {
+      this.listTerritories = [];
+      this.updateGroupedTerritories();
     }
   }
 

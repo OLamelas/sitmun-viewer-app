@@ -1,5 +1,4 @@
 {
-  "genericPrivateHeader.hi": "Hola, {{username}}!",
   "callback.processing": "Processant l'inici de sessió...",
   "callback.redirect": "Sessió iniciada! Redirigint...",
   "loginPage.logoutText": "Desconnexió",
@@ -117,10 +116,11 @@
   "mapPage.title": "Mapa d'exemple",
   "dashboardDialog.inputPlaceholder": "Cerca",
   "menu.login": "Accedir",
+  "menu.greeting": "Hola, {{username}}!",
   "menu.hi": "Hola, ",
   "menu.logout": "Tancar sessió",
   "menu.dashboard": "Aplicacions",
-  "menu.changeApplication": "Canviar",
+  "menu.changeAppOrTerritory": "Canviar",
   "menu.changeTerritory": "Canviar territori",
   "menu.continue": "Continuar",
   "common.button.close": "Tancar",
@@ -177,5 +177,17 @@
   "territory.description": "Descripció",
   "territory.descriptionMissing": "Cap descripció",
   "common.filterHintSelectedApplicationAlwaysVisible": "L'aplicació seleccionada sempre roman visible",
-  "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible"
+  "common.filterHintSelectedTerritoryAlwaysVisible": "El territori seleccionat sempre roman visible",
+  "systemInfo.about": "A prepaus",
+  "systemInfo.recentErrors": "Errors recents",
+  "layerCatalog.linkType.metadata": "Metadades",
+  "layerCatalog.linkType.download": "Descarga",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN",
+  "moreInfo.show": "Veire eth contengut",
+  "moreInfo.hide": "Amagar eth contengut",
+  "moreInfo.openLink": "Dobrir",
+  "moreInfo.downloadFile": "Descargar"
 }

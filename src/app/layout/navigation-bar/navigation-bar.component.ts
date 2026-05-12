@@ -11,9 +11,11 @@ import {
   HostBinding,
   OnInit,
   DoCheck,
-  OnDestroy
+  OnDestroy,
+  ViewChild
 } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
+import { MatMenuTrigger } from '@angular/material/menu';
 import { Router, NavigationEnd } from '@angular/router';
 
 import {
@@ -26,7 +28,9 @@ import { AuthenticationService } from '@auth/services/authentication.service';
 import { NavigationPath } from '@config/app.config';
 import { TranslateService } from '@ngx-translate/core';
 import { ChangeApplicationTerritoryDialogComponent } from '@ui/components/change-application-territory-dialog/change-application-territory-dialog.component';
-import { Subscription } from 'rxjs';
+import { MenuComponent } from '@ui/components/menu/menu.component';
+import { Subject, Subscription } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { LanguageService } from 'src/app/services/language.service';
 
 @Component({
@@ -64,9 +68,18 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
   @HostBinding('@toolbarCollapse') get toolbarCollapse() {
     return this.toolbarState;
   }
+
+  /** Closes the root toolbar menu (and nested panels such as the language submenu). */
+  @ViewChild('toolbarMenuTrigger')
+  toolbarMenuTrigger?: MatMenuTrigger;
+
+  @ViewChild('menuComponent')
+  menuComponent?: MenuComponent;
+
   username = '';
   navigationClassActive: NavigationButtonActive = NavigationButtonActive.HOME;
   private routerSubscription?: Subscription;
+  private readonly destroy$ = new Subject<void>();
 
   headerLeftSection: IconSection[] | null = null;
   headerRightSection: IconSection[] | null = null;
@@ -105,8 +118,16 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
         this.overrideNavbar(this.router.url);
         // Update visibility flags on navigation
         this.updateButtonVisibility();
+        // Dismiss menu overlays so nested submenus (e.g. language) cannot orphan on route change
+        this.closeToolbarMenu();
       }
     });
+    this.translate.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.overrideNavbar(this.router.url);
+        this.updateButtonVisibility();
+      });
     // Initial update
     this.updateButtonVisibility();
   }
@@ -128,6 +149,8 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
 
   ngOnDestroy() {
     this.routerSubscription?.unsubscribe();
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   overrideNavbar(url: string) {
@@ -208,7 +231,15 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
     else this.navigationClassActive = NavigationButtonActive.OTHER;
   }
 
+  private closeToolbarMenu(): void {
+    // Close nested submenus first (e.g., language menu)
+    this.menuComponent?.closeAllMenus();
+    // Then close the root menu
+    this.toolbarMenuTrigger?.closeMenu();
+  }
+
   homeRedirect() {
+    this.closeToolbarMenu();
     this.navigationClassActive = NavigationButtonActive.HOME;
     if (this.router.url.startsWith('/public')) {
       void this.router.navigateByUrl(NavigationPath.Section.Public.Dashboard);
@@ -218,15 +249,18 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
   }
 
   loginRedirect() {
+    this.closeToolbarMenu();
     void this.router.navigateByUrl(NavigationPath.Auth.Login);
   }
 
   profileRedirect() {
+    this.closeToolbarMenu();
     this.navigationClassActive = NavigationButtonActive.PROFILE;
     void this.router.navigate([NavigationPath.Section.User.Profile]);
   }
 
   logoutRedirect() {
+    this.closeToolbarMenu();
     this.authenticationService.logout();
   }
 
@@ -318,6 +352,7 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
    * - Dialog selection logic: handled in ChangeApplicationTerritoryDialogComponent
    */
   openTerritoriesDialog(): void {
+    this.closeToolbarMenu();
     const dialogRef = this.dialog.open(
       ChangeApplicationTerritoryDialogComponent,
       {

@@ -1,5 +1,4 @@
 {
-  "genericPrivateHeader.hi": "Hello {{username}}!",
   "callback.processing": "Processing your login...",
   "callback.redirect": "Login successful! Redirecting...",
   "loginPage.logoutText": "Log out",
@@ -162,10 +161,11 @@
   "mapPage.title": "Sample map",
   "dashboardDialog.inputPlaceholder": "Search",
   "menu.login": "Log in",
+  "menu.greeting": "Hello {{username}}!",
   "menu.hi": "Hi, ",
   "menu.logout": "Log Out",
   "menu.dashboard": "Applications",
-  "menu.changeApplication": "Change",
+  "menu.changeAppOrTerritory": "Change",
   "menu.changeTerritory": "Switch territory",
   "menu.continue": "Continue",
   "paginate.previous": "Previous",
@@ -239,5 +239,15 @@
   "systemInfo.errorType.uncaught": "Uncaught Exception",
   "systemInfo.copyError": "Copy Error",
   "systemInfo.closeErrorPanel": "Close",
-  "common.button.close": "Close"
+  "common.button.close": "Close",
+  "layerCatalog.linkType.metadata": "Metadata",
+  "layerCatalog.linkType.download": "Download",
+  "layerCatalog.linkType.format.text_html": "HTML",
+  "layerCatalog.linkType.format.text_xml": "XML",
+  "layerCatalog.linkType.format.application_zip": "ZIP",
+  "layerCatalog.linkType.format.application_octet-stream": "BIN",
+  "moreInfo.show": "Show content",
+  "moreInfo.hide": "Hide content",
+  "moreInfo.openLink": "Open",
+  "moreInfo.downloadFile": "Download"
 }

@@ -3,6 +3,14 @@
  * Based on OGC WMS 1.3.0 specification.
  */
 
+/** OGC MetadataURL / DataURL entry (parsed capabilities). */
+export interface WmsOnlineResourceLink {
+  Format?: string;
+  OnlineResource?: {
+    'xlink:href'?: string;
+  };
+}
+
 /**
  * WMS Layer definition from GetCapabilities response
  */
@@ -76,6 +84,16 @@ export interface WMSLayer {
   Layer?: WMSLayer[];
 
   /**
+   * OGC WMS 1.3.0 — smallest scale denominator at which the layer is drawn.
+   */
+  MinScaleDenominator?: number;
+
+  /**
+   * OGC WMS 1.3.0 — largest scale denominator at which the layer is drawn.
+   */
+  MaxScaleDenominator?: number;
+
+  /**
    * Whether the layer is queryable (supports GetFeatureInfo)
    */
   queryable?: boolean;
@@ -95,6 +113,12 @@ export interface WMSLayer {
       };
     };
   };
+
+  /** OGC WMS Layer MetadataURL (single or repeated). */
+  MetadataURL?: WmsOnlineResourceLink | WmsOnlineResourceLink[];
+
+  /** OGC WMS Layer DataURL (single or repeated). */
+  DataURL?: WmsOnlineResourceLink | WmsOnlineResourceLink[];
 }
 
 /**

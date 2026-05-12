@@ -55,9 +55,50 @@ export interface AppGroup {
 
 export interface AppLayer {
   id: string;
+  /**
+   * Profile layer title; merged as OGC `Title` on matched real WMS/WMTS capability layers in
+   * `RasterLayerService` when the key exists in the profile JSON (non-empty replaces, empty removes,
+   * omitted leaves the service value).
+   */
   title: string;
+  /**
+   * Profile text merged as OGC `Abstract` when the key exists (non-empty replaces, empty removes,
+   * omitted leaves the service value).
+   */
+  description?: string;
   layers: string[];
   service: string;
+  /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
+  minScaleDenominator?: number;
+  /** Profile JSON key; omitted when unset (merged onto GetCapabilities in RasterLayerService). */
+  maxScaleDenominator?: number;
+  /** Layer transparency 0..100 (0 = opaque, 100 = fully transparent); omitted when unset. */
+  transparency?: number;
+  /**
+   * Profile order; applied as SITNA `zIndex` when the layer is added to the working layers via
+   * `LayerCatalog.addLayerToMap`. Higher values render above lower; absent/null is treated as
+   * `zIndex` 0 (the same default applied to externally loaded layers without a profile entry).
+   * Caveats:
+   * - SITNA keeps raster layers below vector layers regardless of `order`.
+   * - Subsequent user-driven reorder via the WorkLayerManager control bypasses `zIndex` and is
+   *   not persisted back to this field.
+   */
+  order?: number;
+  /**
+   * OGC MetadataURL href; when the key exists, merged onto matched real or virtual WMS/WMTS layers
+   * (non-empty replaces, empty removes, omitted unchanged).
+   */
+  metadataURL?: string;
+  /**
+   * OGC DataURL href; when the key exists, merged onto matched real or virtual WMS/WMTS layers
+   * (non-empty replaces, empty removes, omitted unchanged).
+   */
+  datasetURL?: string;
+  /**
+   * When false, merged WMS GetCapabilities set `queryable` false for this profile layer.
+   * Omitted or undefined: legacy profiles behave as queryable (true).
+   */
+  queryableFeatureEnabled?: boolean;
 }
 
 export interface AppService {
@@ -97,6 +138,10 @@ export interface AppNodeInfo {
   isRadio: boolean;
   children: string[];
   order: number;
+  /** Optional folder-level metadata URL from tree node (client profile). */
+  metadataURL?: string;
+  /** Optional folder-level dataset URL from tree node (client profile). */
+  datasetURL?: string;
 }
 
 export interface AppGlobalConfiguration {

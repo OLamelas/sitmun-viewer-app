@@ -653,6 +653,17 @@ input[type='range']:focus {
   padding-bottom: 4px !important;
 }
 
+/* Layer catalog info: metadata / download links (SITNA-aligned list) */
+.tc-ctl-lcat-info .tc-ctl-lcat-info-links {
+  list-style: none;
+  padding: 0;
+  margin: 0.25em 0 0;
+}
+
+.tc-ctl-lcat-info .tc-ctl-lcat-info-links li {
+  margin: 0.35em 0;
+}
+
 .tc-ctl-lcat-info .tc-modal {
   opacity: 1 !important;
   visibility: visible !important;
@@ -684,6 +695,10 @@ input[type='range']:focus {
 }
 
 .tc-ctl-lcat-info .tc-ctl-lcat-info-data-title {
+  text-transform: none;
+}
+
+.tc-ctl-lcat .tc-ctl-lcat-info .tc-ctl-lcat-info-data-title {
   text-transform: none;
 }
 

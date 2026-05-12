@@ -30,6 +30,11 @@ export interface SitnaLayerOptions {
   title?: string;
   type?: string;
   url?: string;
+  /**
+   * SITNA buffer order; default 0. Higher renders above lower; raster layers are kept below
+   * vector layers regardless of `zIndex`.
+   */
+  zIndex?: number;
 }
 
 //Controls
@@ -46,6 +51,12 @@ export interface SitnaControls {
   fullScreen?: boolean | SitnaControlOptions;
   geolocation?: boolean | SitnaControlsGeolocation;
   layerCatalog?: boolean | SitnaLayerCatalogOptions;
+  /**
+   * Map legend panel (SITNA built-in). When truthy, shows symbology for TOC / work layers from OGC
+   * capabilities (e.g. WMS legend graphics), not from custom URLs outside the service. Boolean or
+   * `SitnaControlOptions` (e.g. `div`; default slot often `tc-slot-legend`).
+   * @see https://sitna.navarra.es/api/doc/SITNA.control.html
+   */
   legend: boolean | SitnaControlOptions;
   loadingIndicator?: boolean | SitnaControlOptions;
   measure?: boolean | SitnaControlsMeasure;

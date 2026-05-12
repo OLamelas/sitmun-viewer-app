@@ -2,10 +2,12 @@ import { inject, Injectable } from '@angular/core';
 
 import { AppCfg, AppNodeInfo, AppTasks, AppTree } from '@api/model/app-cfg';
 
+import { ensureLayerCatalogInfoAffordance } from './layer-catalog-info-affordance';
 import { CatalogSwitchingService } from '../../services/catalog-switching.service';
 import { ConfigLookupService } from '../../services/config-lookup.service';
 import { RasterLayerService } from '../../services/raster-layer.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
+import { SitnaCapabilitiesInterceptor } from '../../services/sitna-capabilities-interceptor.service';
 import { VirtualWmsCapabilitiesService } from '../../services/virtual-wms-capabilities.service';
 import type { Meld, MeldJoinPoint } from '../../types/meld.types';
 import { ControlHandlerBase } from '../control-handler-base';
@@ -44,6 +46,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   private readonly configLookup = inject(ConfigLookupService);
   private readonly catalogSwitching = inject(CatalogSwitchingService);
   private readonly rasterService = inject(RasterLayerService);
+  private readonly capabilitiesInterceptor = inject(SitnaCapabilitiesInterceptor);
 
   // Store AppCfg for use in patches
   // Set in loadPatches() before patches are applied, so it's guaranteed to be non-null when patches execute
@@ -65,19 +68,16 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   }
 
   /**
-   * Bootstrap: patch Layer.getCapabilitiesOnline before map init so virtual WMS interception works.
+   * Bootstrap: install the shared SITNA capabilities interceptor so virtual WMS interception works.
+   * The interceptor is a root-scoped singleton; the first control handler to call `ensurePatched`
+   * installs the around-advice. Subsequent calls (e.g. on language reload) refresh `AppCfg`.
    *
    * @param context - Full application configuration context (required, must not be null)
    */
   async applyBootstrap(context: AppCfg): Promise<void> {
-    // Store AppCfg immediately for use in patch closures
     this.currentAppCfg = context;
-
-    // Ensure context is initialized in lookup service
     this.configLookup.initialize(context);
-
-    // Apply only the bootstrap patch here; other patches run in loadPatches()
-    await this.patchLayerGetCapabilitiesOnline();
+    await this.capabilitiesInterceptor.ensurePatched(context);
   }
 
   /**
@@ -317,127 +317,6 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   // ============================================================================
 
   /**
-   * Patch Layer.getCapabilitiesOnline to intercept virtual service requests.
-   * When a virtual service URL is detected, return generated capabilities instead of fetching from server.
-   */
-  private async patchLayerGetCapabilitiesOnline(): Promise<void> {
-    await this.withTCAsync(async () => {
-      const SITNA = this.sitnaApi.getSITNA();
-
-      // Try to find Layer prototype
-      const LayerProto = (SITNA as any)?.layer?.Layer?.prototype;
-      if (!LayerProto) {
-        return;
-      }
-
-      if (typeof LayerProto.getCapabilitiesOnline !== 'function') {
-        return;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      const handler = this;
-      const advice = meld.around(
-        LayerProto,
-        'getCapabilitiesOnline',
-        function (this: any, joinPoint: MeldJoinPoint): any {
-          // Get the layer instance
-          const layer = this as {
-            url?: string;
-            getCapabilitiesUrl?: () => string;
-            [key: string]: unknown;
-          };
-
-          // Try to get the capabilities URL from multiple sources
-          // 1. Check if URL is passed as first argument
-          // 2. Check layer.getCapabilitiesUrl() method
-          // 3. Check layer.url property
-          let capabilitiesUrl: string | undefined;
-          if (
-            joinPoint.args &&
-            joinPoint.args.length > 0 &&
-            typeof joinPoint.args[0] === 'string'
-          ) {
-            capabilitiesUrl = joinPoint.args[0];
-          } else if (typeof layer.getCapabilitiesUrl === 'function') {
-            capabilitiesUrl = layer.getCapabilitiesUrl();
-          } else if (layer.url) {
-            capabilitiesUrl = layer.url;
-          }
-
-          const appCfg =
-            handler.sitnaApi.getGlobal('currentAppCfg') ??
-            handler.currentAppCfg;
-          // Check if this is a virtual service
-          if (
-            capabilitiesUrl &&
-            appCfg &&
-            handler.virtualWmsService.isVirtualServiceUrl(capabilitiesUrl)
-          ) {
-            const nodeId =
-              handler.virtualWmsService.extractNodeIdFromUrl(capabilitiesUrl);
-
-            if (nodeId) {
-              try {
-                // Generate virtual capabilities
-                const capabilities =
-                  handler.virtualWmsService.generateCapabilities(
-                    nodeId,
-                    appCfg
-                  );
-                return Promise.resolve(capabilities);
-              } catch (error) {
-                console.error(
-                  '[Virtual WMS] Failed to generate capabilities',
-                  error
-                );
-                // Fall back to normal fetch
-              }
-            }
-          }
-
-          // Not a virtual service, proceed with normal fetch
-          const proceedResult = joinPoint.proceed();
-
-          // Handle both Promise and synchronous returns
-          if (
-            proceedResult &&
-            typeof (proceedResult as any).then === 'function'
-          ) {
-            // It's a Promise
-            return (proceedResult as Promise<unknown>).then(
-              (result: unknown) => {
-                const cfg =
-                  handler.sitnaApi.getGlobal('currentAppCfg') ??
-                  handler.currentAppCfg;
-                result = handler.rasterService.processWmtsCapabilitiesResult(
-                  layer,
-                  capabilitiesUrl,
-                  result,
-                  cfg || undefined
-                );
-
-                return result;
-              }
-            );
-          } else {
-            const cfg =
-              handler.sitnaApi.getGlobal('currentAppCfg') ??
-              handler.currentAppCfg;
-            return handler.rasterService.processWmtsCapabilitiesResult(
-              layer,
-              capabilitiesUrl,
-              proceedResult,
-              cfg || undefined
-            );
-          }
-        }
-      );
-
-      this.patchManager.add(() => meld.remove(advice));
-    });
-  }
-
-  /**
    * Patch LayerCatalog.addLayerToMap to replace virtual layers with real layer configurations.
    * Completely replaces the method to handle virtual layers natively.
    */
@@ -482,8 +361,14 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             type?: string;
             layerNames?: string | string[];
             nodeId?: string;
+            /** {@link AppService#id}; set when resolving from catalog for proxy-aware scale merge. */
+            serviceId?: string;
             [key: string]: unknown;
           };
+
+          // Profile-driven transparency (0..100, 0 = opaque) → SITNA opacity (0..1, 1 = opaque).
+          // Skip when null/0; SITNA layers default to opacity 1.
+          const transparency = realLayerConfig?.transparency;
 
           if (realLayerConfig) {
             layerOptions.id = self.getUID();
@@ -497,6 +382,9 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
               ? realLayerConfig.layerNames
               : [realLayerConfig.layerNames];
             layerOptions.nodeId = layerName;
+            if (realLayerConfig.serviceId) {
+              layerOptions.serviceId = realLayerConfig.serviceId;
+            }
           } else {
             layerOptions.id = self.getUID();
             layerOptions.hideTree = true;
@@ -534,7 +422,47 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             }
 
             if (newLayer.isCompatible(self.map.crs)) {
-              self.map.addLayer(layerOptions);
+              // SITNA's map.addLayer creates and returns a *new* layer instance, distinct from
+              // `newLayer` above (which was used only for capability/title preflight). Apply the
+              // profile transparency on the live map layer so WorkLayerManager sees it.
+              const profileOpacity =
+                typeof transparency === 'number' && transparency > 0
+                  ? (100 - transparency) / 100
+                  : undefined;
+
+              // WorkLayerManager slider reads renderOptions.opacity (0..1), not only getOpacity().
+              if (profileOpacity != null) {
+                const prev = layerOptions['renderOptions'] as
+                  | Record<string, unknown>
+                  | undefined;
+                layerOptions['renderOptions'] = {
+                  ...(typeof prev === 'object' && prev !== null ? prev : {}),
+                  opacity: profileOpacity
+                };
+              }
+
+              // Profile-driven layer order → SITNA `zIndex` (default 0). Applied uniformly to
+              // catalog-resolved real layers and externally loaded ones so the SITNA stealth
+              // fallback (1) never leaks in. Subsequent WorkLayerManager drag-reorder bypasses
+              // this value (operates on OpenLayers indices, not zIndex) and is not persisted.
+              layerOptions['zIndex'] = realLayerConfig?.order ?? 0;
+
+              const addedLayer = await self.map.addLayer(layerOptions);
+
+              if (
+                addedLayer != null &&
+                profileOpacity != null &&
+                typeof addedLayer.setOpacity === 'function'
+              ) {
+                await addedLayer.setOpacity(profileOpacity);
+                const ro = addedLayer.renderOptions as
+                  | Record<string, unknown>
+                  | undefined;
+                addedLayer.renderOptions = {
+                  ...(typeof ro === 'object' && ro !== null ? ro : {}),
+                  opacity: profileOpacity
+                };
+              }
               return newLayer;
             } else {
               const showProjectionChangeDialog =
@@ -1056,8 +984,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
           const isVirtualByNodeId = !!nodeIdFromOptions;
 
           if (!isVirtualByUrl && !isVirtualByNodeId) {
-            // Not a virtual layer, proceed with original getInfo
-            return joinPoint.proceed();
+            return ensureLayerCatalogInfoAffordance(joinPoint.proceed());
           }
 
           // For virtual layers, use nodeId from options if available, otherwise use name parameter
@@ -1110,7 +1037,10 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             originalInfo && typeof originalInfo === 'object'
               ? originalInfo
               : {};
-          return { ...originalInfoObj, ...enrichedInfo };
+          return ensureLayerCatalogInfoAffordance({
+            ...originalInfoObj,
+            ...enrichedInfo
+          });
         }
       );
 
