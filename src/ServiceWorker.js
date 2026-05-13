@@ -25,6 +25,11 @@ self.addEventListener('message', (event) => {
   if (eventData.type === MIDDLEWARE_URL_KEY) {
     middlewareUrl = eventData.url;
     console.debug('[SW] Middleware URL updated:', middlewareUrl);
+
+    // CRITICAL for hard refresh - force claim clients so the SW regains control
+    self.clients.claim().then(() => {
+      console.debug('[SW] Re-claimed clients after message');
+    });
   }
 });
 
@@ -32,55 +37,63 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Filter requests to only include middleware requests
-  if (!middlewareUrl || !url.toString().startsWith(middlewareUrl)) {
-    return;
-  }
+  event.respondWith((async () => {
 
-  event.respondWith(
-    getToken('proxy_token')
-      .then((token) => {
-        const headers = new Headers(request.headers);
-        if (token) {
-          headers.set('Authorization', `Bearer ${token}`);
-          console.debug(`[SW] Requested ${url} with Authorization header`);
-        } else {
-          console.warn(`[SW] Token not found!`);
-        }
+    // Restore state from DB if SW woke up from idle
+    if (!middlewareUrl) {
+      await loadMiddlewareUrlFromDB();
+    }
 
-        const modifiedRequest = new Request(request, {
-          headers
-        });
+    // Ignore non-proxy requests
+    if (!middlewareUrl || !url.toString().startsWith(middlewareUrl)) {
+      return fetch(request);
+    }
 
-        return fetch(modifiedRequest);
-      })
-      .catch((error) => {
-        console.error('[SW] Error handling middleware request', error);
-        return fetch(request);
-      })
-  );
+    try {
+      const token = await getToken('proxy_token');
+      const headers = new Headers(request.headers);
+
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+        console.debug(`[SW] Requested ${url} with Authorization header`);
+      } else {
+        console.warn(`[SW] Token not found!`);
+      }
+
+      const modifiedRequest = new Request(request, { headers });
+      return fetch(modifiedRequest);
+    } catch (error) {
+      console.error('[SW] Error handling middleware request', error);
+      return fetch(request);
+    }
+  })());
 });
 
 async function loadMiddlewareUrlFromDB() {
+  let db = null;
   try {
-    const db = await openDB();
+    db = await openDB();
     middlewareUrl = await getConfigFromDB(db, 'middleware_url');
     if (middlewareUrl) {
       console.debug('[SW] Middleware URL loaded from DB', middlewareUrl);
     }
   } catch (error) {
     console.warn('[SW] Error loading middleware URL from DB', error);
+  } finally {
+    if (db) db.close();
   }
 }
 
 async function getToken(tokenName) {
+  let db = null;
   try {
-    const db = await openDB();
-
+    db = await openDB();
     return await getTokenFromDB(db, tokenName);
   } catch (error) {
     console.warn('Error retrieving proxy token', error);
     return null;
+  } finally {
+    if (db) db.close();
   }
 }
 
@@ -135,4 +148,3 @@ function getConfigFromDB(db, id) {
     };
   });
 }
-
