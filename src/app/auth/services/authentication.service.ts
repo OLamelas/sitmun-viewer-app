@@ -21,6 +21,7 @@ import {
   Observable,
   Subscription,
   catchError,
+  finalize,
   map,
   of,
   switchMap,
@@ -177,12 +178,11 @@ export class AuthenticationService<T> {
           }
           return response;
         }),
-        tap(() => this.isRefreshingProxyToken.set(false)),
         catchError((err) => {
-          this.isRefreshingProxyToken.set(false);
           console.warn('Error refreshing proxy token:', err);
           return of(null);
-        })
+        }),
+        finalize(() => this.isRefreshingProxyToken.set(false))
       );
   }
 
