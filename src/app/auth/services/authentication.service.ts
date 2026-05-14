@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Inject, Injectable } from '@angular/core';
+import { Inject, Injectable, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import {
@@ -17,7 +17,16 @@ import {
   AuthenticationRequest
 } from '@auth/authentication.options';
 import { NavigationPath, QueryParam } from '@config/app.config';
-import { Observable, Subscription, catchError, map, of, switchMap, tap, timer } from 'rxjs';
+import {
+  Observable,
+  Subscription,
+  catchError,
+  map,
+  of,
+  switchMap,
+  tap,
+  timer
+} from 'rxjs';
 
 import { IndexedDbService } from './indexed-db.service';
 import { environment } from '../../../environments/environment';
@@ -30,6 +39,7 @@ export class AuthenticationService<T> {
   private readonly USERNAME_KEY: string;
 
   private proxyRefreshSubscription: Subscription | null = null;
+  private isRefreshingProxyToken = signal(false);
   private indexedDbInitialized = false;
 
   constructor(
@@ -39,6 +49,20 @@ export class AuthenticationService<T> {
     @Inject(AUTH_CONFIG_DI) private readonly config: AuthConfig<T>
   ) {
     this.USERNAME_KEY = this.config.localStoragePrefix + '_username';
+    this.setupServiceWorkerListener();
+  }
+
+  private setupServiceWorkerListener(): void {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'AUTH_ERROR') {
+          console.debug(
+            '[AuthService] Received AUTH_ERROR from SW. Refreshing token...'
+          );
+          this.refreshProxyToken().subscribe();
+        }
+      });
+    }
   }
 
   async initializeIndexedDb(): Promise<void> {
@@ -139,6 +163,11 @@ export class AuthenticationService<T> {
   }
 
   private refreshProxyToken() {
+    if (this.isRefreshingProxyToken()) {
+      return of(null);
+    }
+
+    this.isRefreshingProxyToken.set(true);
     return this.http
       .post<{ proxy_token?: string }>(environment.apiUrl + URL_AUTH_PROXY, null)
       .pipe(
@@ -148,7 +177,9 @@ export class AuthenticationService<T> {
           }
           return response;
         }),
+        tap(() => this.isRefreshingProxyToken.set(false)),
         catchError((err) => {
+          this.isRefreshingProxyToken.set(false);
           console.warn('Error refreshing proxy token:', err);
           return of(null);
         })

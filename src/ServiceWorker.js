@@ -50,7 +50,14 @@ self.addEventListener('fetch', (event) => {
     }
 
     try {
-      const token = await getToken('proxy_token');
+      let token = await getToken('proxy_token');
+
+      // Retry once after a short delay if token is missing (handles initial load race condition)
+      if (!token) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        token = await getToken('proxy_token');
+      }
+
       const headers = new Headers(request.headers);
 
       if (token) {
@@ -61,13 +68,32 @@ self.addEventListener('fetch', (event) => {
       }
 
       const modifiedRequest = new Request(request, { headers });
-      return fetch(modifiedRequest);
+      const response = await fetch(modifiedRequest);
+
+      // If we get an auth error, notify the main thread to refresh the token
+      if (response.status === 401 || response.status === 403) {
+        console.warn(`[SW] Auth error (${response.status}) for ${url}. Notifying app...`);
+        notifyAppOfAuthError();
+      }
+
+      return response;
     } catch (error) {
       console.error('[SW] Error handling middleware request', error);
       return fetch(request);
     }
   })());
 });
+
+function notifyAppOfAuthError() {
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: 'AUTH_ERROR',
+        timestamp: Date.now()
+      });
+    });
+  });
+}
 
 async function loadMiddlewareUrlFromDB() {
   let db = null;
@@ -79,6 +105,7 @@ async function loadMiddlewareUrlFromDB() {
     }
   } catch (error) {
     console.warn('[SW] Error loading middleware URL from DB', error);
+    throw error;
   } finally {
     if (db) db.close();
   }

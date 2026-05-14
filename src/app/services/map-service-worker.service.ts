@@ -21,13 +21,13 @@ export class MapServiceWorkerService {
    *
    * @param apiConfig - Application configuration containing proxy URL
    */
-  loadMiddleware(apiConfig: AppCfg): void {
+  loadMiddleware(apiConfig: AppCfg): Promise<void> {
     if (apiConfig.global?.proxy && navigator.serviceWorker) {
-      this.indexedDb
+      const saveConfig = this.indexedDb
         .setConfig('middleware_url', apiConfig.global.proxy)
         .catch((err) => console.warn('Failed to save middleware URL:', err));
 
-      navigator.serviceWorker.ready.then((registration) => {
+      const swReady = navigator.serviceWorker.ready.then((registration) => {
         if (registration.active) {
           registration.active.postMessage({
             type: 'MIDDLEWARE_URL',
@@ -42,6 +42,9 @@ export class MapServiceWorkerService {
           window.location.reload();
         });
       }
+
+      return Promise.all([saveConfig, swReady]).then(() => undefined);
     }
+    return Promise.resolve();
   }
 }
