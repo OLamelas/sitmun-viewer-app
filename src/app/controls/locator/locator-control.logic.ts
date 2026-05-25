@@ -208,10 +208,18 @@ export class LocatorControlLogic implements ControlLogicBase {
         for (const f of task.municipalityCodeFilters) {
           if (f.requestParam) {
             let val: string | null = null;
-            if (f.convertToWgs84 && (f.territoryField === 'territory_center_x' || f.territoryField === 'territory_center_y')) {
-              const center = this.getTerritoryCenter();
-              if (center) {
-                val = f.territoryField === 'territory_center_x' ? String(center[0]) : String(center[1]);
+            if (f.convertProjection && f.targetCrs && (f.territoryField === 'territory_center_x' || f.territoryField === 'territory_center_y')) {
+              const rawX = getTerritoryCenterX();
+              const rawY = getTerritoryCenterY();
+              if (rawX && rawY) {
+                const mapCrs = this.getMapCrs();
+                const util = (globalThis as any).TC?.Util;
+                if (typeof util?.reproject === 'function') {
+                  try {
+                    const reprojected: [number, number] = util.reproject([Number.parseFloat(rawX), Number.parseFloat(rawY)], mapCrs, f.targetCrs);
+                    val = f.territoryField === 'territory_center_x' ? String(reprojected[0]) : String(reprojected[1]);
+                  } catch { /* ignore reprojection errors */ }
+                }
               }
             } else {
               val = this.resolveTerritoryField(f.territoryField);
@@ -222,9 +230,7 @@ export class LocatorControlLogic implements ControlLogicBase {
       }
 
       let results = await executeLocatorSearch(task, searchText, templateVars, extraQueryParams);
-      if (task.filterByTerritoryCode) {
-        results = this.filterResultsByTerritoryCode(results, task);
-      } else if (task.filterByMunicipalityCode) {
+      if (task.filterByMunicipalityCode) {
         results = this.filterResultsByMunicipalityCode(results, task);
       } else if (task.filterByExtent) {
         results = this.filterResultsByMapExtent(results, task);
@@ -316,6 +322,7 @@ export class LocatorControlLogic implements ControlLogicBase {
     if (!field) return getTerritoryCode(); // default: use territory_code
     switch (field) {
       case 'territory_code':              return getTerritoryCode();
+      case 'territory_idescat_code':      return this.computeIdescatCode(getTerritoryCode());
       case 'territory_name':              return getTerritoryName();
       case 'territory_description':       return getTerritoryDescription();
       case 'territory_authority_name':    return getTerritoryAuthorityName();
@@ -328,24 +335,22 @@ export class LocatorControlLogic implements ControlLogicBase {
   }
 
   /**
-   * Filters results by territory code using a single configured response field.
-   * Each feature's responseField is compared with the territory code (startsWith).
-   * If the field has no value for a feature, falls back to extent filtering.
+   * Computes the 6-digit IDESCAT municipality code from a 5-digit INE code.
+   * Appends the Luhn-like control digit used by the IDESCAT.
+   * Formula: tables [C,B,A,C,B] applied to each digit, sum mod 10, complement to 10.
+   * Returns null if the input is not a valid 5-digit code.
    */
-  private filterResultsByTerritoryCode(results: any[], task: LocatorTask): any[] {
-    const code = getTerritoryCode();
-    if (!code || !task.territoryCodeResponseField) return results;
-    const ext = this.getInitialExtent() ?? this.getRawMapExtent();
-    const mapCrs = ext ? this.getMapCrs() : null;
-    return results.filter((item) => {
-      const val = getByPath(item, task.territoryCodeResponseField);
-      if (typeof val === 'string' && val !== '') {
-        return val.startsWith(code);
-      }
-      // No field value → fall back to extent
-      if (ext && mapCrs) return this.itemIsInsideExtent(item, task, ext, mapCrs);
-      return true;
-    });
+  private computeIdescatCode(code: string | null): string | null {
+    if (!code) return null;
+    const c5 = code.padStart(5, '0').slice(0, 5);
+    if (!/^\d{5}$/.test(c5)) return null;
+    const A = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const B = [0, 3, 8, 2, 7, 4, 1, 5, 9, 6];
+    const C = [0, 2, 4, 6, 8, 1, 3, 5, 7, 9];
+    const tables = [C, B, A, C, B];
+    const total = tables.reduce((sum, table, i) => sum + table[Number(c5[i])], 0);
+    const digit = (10 - (total % 10)) % 10;
+    return c5 + String(digit);
   }
 
   /**
