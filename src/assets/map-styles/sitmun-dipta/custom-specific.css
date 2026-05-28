@@ -1,0 +1,574 @@
+/* SITMUN-specific styles adapted from sitmun-base-old theme */
+
+:root {
+  --ide-main-color: #ff9300;
+}
+
+/* Adjust panel positions for SITMUN layout */
+.tc-right-panel > h1 {
+  top: 204px;
+}
+
+.tc-ctl.tc-ctl-fscreen {
+  position: absolute;
+  top: 8.8em !important;
+  left: 20px !important;
+}
+
+
+.tc-ctl-be {
+  left: 20px;
+  top: 380px;
+  margin-top: 0px;
+  position: absolute;
+}
+
+/* Search positioning */
+.tc-ctl-search-content {
+  position: absolute;
+  top: 3.7em;
+  left: 6%;
+  padding: 0;
+  width: 340px;
+  z-index: 9998;
+  transition: left 200ms;
+  font-size: 0.9em;
+  border-radius: 0px;
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+.tc-ctl-search-content > a {
+  display: none;
+}
+
+/* Move search control right when left panel is expanded */
+/* CSS :has() selector for modern browsers */
+.tc-map:has(.tc-left-panel:not(.tc-collapsed):not(.tc-collapsed-left)) .tc-ctl-search-content {
+  left: 410px; /* 320px panel width + 20px margin + 70px spacing */
+  transition: left 200ms;
+}
+
+/* JavaScript fallback class for browsers without :has() support */
+.tc-ctl-search-content.search-left-expanded {
+  left: 410px; /* 320px panel width + 20px margin + 70px spacing */
+  transition: left 200ms;
+}
+
+.tc-ctl-search-content > h2 {
+  display: none;
+}
+
+.tc-ctl-search-list {
+  border: 0px;
+  border-radius: 0px !important;
+  width: 288px;
+}
+
+.tc-ctl-btn.tc-ctl-search-btn {
+  width: 40px;
+  min-width: 40px;
+  flex: 0 0 40px;
+  line-height: 40px;
+  height: 40px;
+  padding: 0px;
+  border-radius: 0px !important;
+  background-image: url(./img/search.png);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 30px 30px;
+  display: block;
+  cursor: pointer;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  font-size: 0;
+  box-sizing: border-box;
+  background-color: #333333 !important;
+  border-color: #333333 !important;
+}
+
+/* Work layer manager and layer catalog specific styles */
+/* Keep base padding defaults from api-sitna for WLM and LCAT */
+.tc-ctl-wlm,
+.tc-ctl-lcat {
+  padding: inherit;
+}
+
+/* Make layer catalog fill available height and use flexbox layout */
+.tc-ctl-lcat {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-grow: 1;
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+/* Change topic button styling */
+.tc-ctl-lcat-btn-change-topic,
+#change-catalog-sitmun {
+  text-decoration: none !important;
+  margin-left: 10px;
+  display: inline-block;
+  vertical-align: baseline;
+  line-height: 1.1em;
+  font-size: 0.9em;
+  font-weight: normal;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+
+.tc-ctl-lcat-btn-change-topic:hover,
+#change-catalog-sitmun:hover {
+  opacity: 0.7;
+}
+
+.tc-ctl-wlm .tc-ctl-wlm-content ul {
+  margin-top: 5px;
+  margin-bottom: 5px;
+  width: 100% !important;
+}
+
+.tc-ctl-wlm li.tc-ctl-wlm-elm {
+  border: 0px;
+  border-radius: 0px;
+  transition: all 200ms;
+  border-top: 1px dotted #ccc;
+  padding: 5px;
+}
+
+.tc-ctl-wlm li.tc-ctl-wlm-elm:first-child {
+  border-top: 0px dotted #ccc;
+}
+
+.tc-ctl-wlm .tc-ctl-wlm-lyr {
+  font-size: 0.75em;
+  padding-bottom: 5px;
+  color: #757575 !important;
+}
+
+.tc-ctl-wlm .tc-ctl-wlm-path {
+  color: #660000 !important;
+}
+
+.tc-ctl-wlm li.tc-ctl-wlm-elm.tc-ctl-wlm-elm-notvisible .tc-ctl-wlm-lyr {
+  color: #757575 !important;
+}
+
+.tc-ctl-lcat li.tc-ctl-lcat-node-notvisible {
+  color: #757575 !important;
+}
+
+.tc-ctl-wlm input[type='range'] {
+  width: 65%;
+  margin-right: 5%;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .tc-tools-panel > h1 {
+    top: 84px;
+  }
+
+  .tc-ctl-search-content {
+    left: 20px;
+  }
+
+  .tc-left-panel.tc-collapsed .tc-ctl-sv {
+    left: 20px;
+    top: 215px !important;
+  }
+
+  /* Hide coordinates on mobile */
+  #tc-slot-coordinates {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   Layer Catalog Projects Panel Styling (SITMUN templates)
+   ============================================================================ */
+
+/* Content area - flexible to fill remaining space */
+.tc-ctl-lcat-proj-content {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  padding: 0.3em !important;
+  overflow: hidden !important;
+}
+
+/* Subtitle styling */
+.tc-ctl-lcat-proj-subtitle {
+  font-size: 0.9em !important;
+  margin-bottom: 10px !important;
+  color: #000000 !important;
+  line-height: 1.5 !important;
+  flex-shrink: 0 !important;
+}
+
+/* Catalog list container - scrollable, fills remaining space */
+.tc-ctl-lcat-proj-childs {
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex: 1 !important;
+  overflow: auto !important;
+  min-height: 0 !important;
+}
+
+/* Catalog item styling - make clickable */
+.tc-ctl-lcat-proj-catalog {
+  cursor: pointer !important;
+  user-select: none !important;
+  padding: 10px !important;
+  margin-bottom: 5px !important;
+  background-color: rgba(
+    0,
+    0,
+    0,
+    0.05
+  ) !important; /* Light grey background for unselected */
+  border-radius: 4px !important;
+  transition: background-color 200ms ease !important;
+}
+
+.tc-ctl-lcat-proj-catalog:hover {
+  background-color: rgba(0, 0, 0, 0.1) !important; /* Darker on hover */
+}
+
+.tc-ctl-lcat-proj-catalog label {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  width: 100% !important;
+  display: block !important;
+  margin: 0 !important;
+}
+
+/* Selected catalog item */
+.tc-ctl-lcat-proj-selected {
+  background-color: var(--ide-main-color, #ff9300) !important;
+  color: #ffffff !important;
+}
+
+.tc-ctl-lcat-proj-selected:hover {
+  background-color: var(
+    --ide-main-color,
+    #ff9300
+  ) !important; /* Keep orange on hover when selected */
+}
+
+.tc-ctl-lcat-proj-selected label {
+  color: #ffffff !important;
+}
+
+/* Buttons container - fixed at bottom */
+.tc-ctl-lcat-proj-buttons {
+  padding: 20px !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-flow: row !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  border-top: 1px solid #ccc !important;
+  flex-shrink: 0 !important;
+}
+
+/* Button styling - use tc-button class for SITMUN modals */
+.tc-ctl-lcat-proj > .tc-modal .tc-ctl-lcat-proj-buttons .tc-button {
+  height: 30px !important;
+  min-width: 90px !important;
+  padding: 8px 16px !important;
+  font-size: 0.9em !important;
+  transition: all 200ms ease !important;
+}
+
+/* Name section - now uses consistent structure with other data sections */
+.tc-ctl-lcat-name {
+  display: inline-block !important;
+  margin-right: 150px !important;
+}
+
+/* Legacy support for old structure */
+#lcat-info-title {
+  display: inline-block !important;
+  margin-left: 5px !important;
+  width: 95px !important;
+}
+
+#lcat-info pre {
+  font-family: inherit !important;
+}
+
+/* ThreeD control button */
+.tc-ctl-3d-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 0px;
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.tc-ctl-3d-btn:hover {
+  background-color: rgba(0, 0, 0, 1);
+  cursor: pointer;
+}
+
+/* URL section */
+.tc-ctl-lcat-url {
+  padding: 0.3em !important;
+}
+
+/* Metadata and download sections */
+.tc-ctl-lcat-metadata {
+  vertical-align: middle !important;
+}
+
+.tc-ctl-lcat-descarregadades {
+  vertical-align: middle !important;
+}
+
+.tc-ctl-lcat-abstract > a {
+  display: block !important;
+}
+
+/* Override responsive media query that sets display: none for tc-ctl-legend h2 */
+@media screen and (min-height: 40em) and (pointer: fine),
+  screen and (min--moz-device-pixel-ratio: 0) and (min-height: 40em) {
+  .tc-ctl-legend h2 {
+    display: block !important;
+    height: 19px !important;
+  }
+}
+
+/* ============================================================================
+   HelloWorld Control Styling
+   ============================================================================ */
+
+.tc-ctl-hw-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tc-ctl-hw-content p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.tc-ctl-hw-btn {
+  align-self: flex-start;
+}
+
+/* ============================================================================
+   Locator Control Styling
+   (Rendered as a tab inside the left tools panel, not as a floating overlay)
+   ============================================================================ */
+
+/* Icon and cursor are set in custom-main.css following the same pattern as all other panel controls */
+
+/* Cancel SITNA's default 2% padding on .tc-ctl so content spans edge-to-edge
+   (same pattern as SITNA's own .tc-ctl-search { padding: 0 }) */
+.tc-ctl-loc {
+  padding: 0;
+}
+
+/* Body container: direct div child of .tc-ctl so SITNA's collapse CSS
+   (max-height:0; opacity:0 on .tc-ctl.tc-collapsed > div) applies to it,
+   hiding the form and ul elements that are not themselves divs */
+.tc-ctl-loc-body {
+  padding: 0;
+  margin: 0;
+}
+
+.tc-ctl-loc-select-row {
+  padding: 8px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tc-ctl-loc-select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #ccc;
+  border-radius: 0;
+  font-size: 0.85em;
+  padding: 0 4px;
+  background-color: #fff;
+}
+
+.tc-ctl-loc-search-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tc-ctl-loc-input {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-right: 1px solid #e0e0e0;
+  padding: 0 8px;
+  font-size: 0.85em;
+  outline: none;
+}
+
+.tc-ctl-loc-search-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tc-ctl-loc-search-btn:hover {
+  background-color: rgba(0, 0, 0, 1);
+}
+
+.tc-ctl-loc-loading {
+  padding: 6px 8px;
+  font-size: 0.8em;
+  color: #666;
+  font-style: italic;
+}
+
+.tc-ctl-loc-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tc-ctl-loc-result-item {
+  padding: 7px 8px;
+  font-size: 0.82em;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.tc-ctl-loc-result-item:hover {
+  background-color: #f5f5f5;
+}
+
+.tc-ctl-loc-no-results {
+  padding: 6px 8px;
+  font-size: 0.82em;
+  color: #999;
+  font-style: italic;
+}
+
+/* ============================================================================
+   Locator Control Styling
+   (Rendered as a tab inside the left tools panel, not as a floating overlay)
+   ============================================================================ */
+
+/* Icon and cursor are set in custom-main.css following the same pattern as all other panel controls */
+
+/* Cancel SITNA's default 2% padding on .tc-ctl so content spans edge-to-edge
+   (same pattern as SITNA's own .tc-ctl-search { padding: 0 }) */
+.tc-ctl-loc {
+  padding: 0;
+}
+
+/* Body container: direct div child of .tc-ctl so SITNA's collapse CSS
+   (max-height:0; opacity:0 on .tc-ctl.tc-collapsed > div) applies to it,
+   hiding the form and ul elements that are not themselves divs */
+.tc-ctl-loc-body {
+  padding: 0;
+  margin: 0;
+}
+
+.tc-ctl-loc-select-row {
+  padding: 8px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tc-ctl-loc-select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #ccc;
+  border-radius: 0;
+  font-size: 0.85em;
+  padding: 0 4px;
+  background-color: #fff;
+}
+
+.tc-ctl-loc-search-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tc-ctl-loc-input {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-right: 1px solid #e0e0e0;
+  padding: 0 8px;
+  font-size: 0.85em;
+  outline: none;
+}
+
+.tc-ctl-loc-search-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border: none;
+  background-color: #333333;
+  background-image: url(./img/search.png);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 30px 30px;
+  cursor: pointer;
+  font-size: 0;
+  flex-shrink: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.tc-ctl-loc-search-btn:hover {
+  background-color: #000000;
+}
+
+.tc-ctl-loc-loading {
+  padding: 6px 8px;
+  font-size: 0.8em;
+  color: #666;
+  font-style: italic;
+}
+
+.tc-ctl-loc-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tc-ctl-loc-result-item {
+  padding: 7px 8px;
+  font-size: 0.82em;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.tc-ctl-loc-result-item:hover {
+  background-color: #f5f5f5;
+}
+
+.tc-ctl-loc-no-results {
+  padding: 6px 8px;
+  font-size: 0.82em;
+  color: #999;
+  font-style: italic;
+}
+
