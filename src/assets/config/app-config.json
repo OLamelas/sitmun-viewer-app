@@ -51,7 +51,6 @@
     "sitmun.locator"
   ],
   "disabledControls": [
-    "sitna.WFSEdit",
     "sitna.offlineMapMaker"
   ],
   "controlDefaults": {

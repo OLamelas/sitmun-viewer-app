@@ -1207,6 +1207,7 @@ input[type='range']:focus {
 .tc-panel-content .tc-ctl-geolocation > h2,
 .tc-panel-content .tc-ctl-meas > h2,
 .tc-panel-content .tc-ctl-dmm > h2,
+.tc-panel-content .tc-ctl-wfsedit > h2,
 .tc-panel-content .tc-ctl-prnmap > h2,
 .tc-panel-content .tc-ctl-share > h2,
 .tc-panel-content .tc-ctl-hw > h2,
@@ -1288,11 +1289,13 @@ sitna-hello-world {
 }
 
 .tc-panel-content .tc-ctl-dmm > h2,
+.tc-panel-content .tc-ctl-wfsedit > h2,
 .tc-panel-content .tc-ctl-meas > h2 {
   background-image: url(./img/drawMeasureN.png);
 }
 
 .tc-panel-content .tc-ctl-dmm.tc-collapsed > h2,
+.tc-panel-content .tc-ctl-wfsedit.tc-collapsed > h2,
 .tc-panel-content .tc-ctl-meas.tc-collapsed > h2 {
   background-image: url(./img/drawMeasureG.png);
   color: var(--sitmun-collapsed-color);
@@ -1406,4 +1409,3 @@ sitna-hello-world {
   bottom: auto !important;
   left: auto !important;
 }
-
