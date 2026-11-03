@@ -80,6 +80,17 @@ describe('CatalogSwitchingService', () => {
     });
   });
 
+  it('delegates catalog intent without mutating the selected ID before the map guard', async () => {
+    const catalog = { currentTreeId: 'tree/1', catalogs: [], rootNodeIds: [] };
+    const updateCatalog = jest.fn().mockResolvedValue(undefined);
+    globals['layerCatalogsForModal'] = catalog;
+    globals['abstractMapObject'] = { updateCatalog };
+    service.switchCatalog('tree/2');
+    await Promise.resolve();
+    expect(updateCatalog).toHaveBeenCalledWith('tree/2');
+    expect(catalog.currentTreeId).toBe('tree/1');
+  });
+
   describe('injectCatalogSwitchingButton', () => {
     it('injects an icon-only toolbar button with current-topic tooltip (no badge)', () => {
       globals['layerCatalogsForModal'] = {

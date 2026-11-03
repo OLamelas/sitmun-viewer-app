@@ -6,7 +6,7 @@ import type { AppCfg } from '@api/model/app-cfg';
 
 /** Reference from catalog-switching to the current map component. */
 export interface AbstractMapRef {
-  updateCatalog?(): void;
+  updateCatalog?(selectedTreeId?: string): void | Promise<void>;
 }
 
 /** State for the layer catalogs modal (topic switching). */

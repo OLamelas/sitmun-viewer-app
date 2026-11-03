@@ -12,6 +12,7 @@ import {
   catalogInfoKind
 } from '../../services/catalog-info-kind';
 import { CatalogLayerSelectionService } from '../../services/catalog-layer-selection.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 import { CatalogSwitchingService } from '../../services/catalog-switching.service';
 import { ConfigLookupService } from '../../services/config-lookup.service';
 import {
@@ -76,6 +77,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
   private readonly virtualWmsService = inject(VirtualWmsCapabilitiesService);
   private readonly configLookup = inject(ConfigLookupService);
   private readonly catalogSelection = inject(CatalogLayerSelectionService);
+  private readonly attributeEditing = inject(FeatureAttributeEditingService);
   private readonly catalogSwitching = inject(CatalogSwitchingService);
   private readonly rasterService = inject(RasterLayerService);
   private readonly layerInfoService = inject(LayerInfoService);
@@ -435,6 +437,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
           const layerName = joinPoint.args[1] as string;
           // eslint-disable-next-line @typescript-eslint/no-this-alias
           const self = this;
+          if (handler.attributeEditing.isMapTransitionPending(self.map)) return Promise.resolve(undefined);
           const layerObj = layer;
           const appCfgAdd =
             handler.sitnaApi.getGlobal('currentAppCfg') ??
@@ -554,22 +557,11 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
           const Raster = TC.layer.Raster;
 
           const commitClaimOnly = async (): Promise<any> => {
-            const removed = handler.catalogSelection.commitSelection(
+            await handler.commitCatalogSelection(
               self.map,
               layerName,
               resource,
-              true
-            );
-            await handler.catalogSelection.runWithSelfCommit(
-              self.map,
-              async () => {
-                await handler.removePhysicalResources(
-                  self.map,
-                  removed.removeResources,
-                  self,
-                  layerName
-                );
-              }
+              prepared.releaseNodeIds
             );
             handler.afterCatalogClaimCommitted(self.map, self);
             return handler.findRepresentativeWorkLayer(
@@ -658,22 +650,11 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
                 ) {
                   await addedWfs.setOpacity(wfsOpacity);
                 }
-                const removedWfs = handler.catalogSelection.commitSelection(
+                await handler.commitCatalogSelection(
                   self.map,
                   layerName,
                   resource,
-                  true
-                );
-                await handler.catalogSelection.runWithSelfCommit(
-                  self.map,
-                  async () => {
-                    await handler.removePhysicalResources(
-                      self.map,
-                      removedWfs.removeResources,
-                      self,
-                      layerName
-                    );
-                  }
+                  prepared.releaseNodeIds
                 );
                 handler.afterCatalogClaimCommitted(self.map, self);
                 return addedWfs;
@@ -764,22 +745,11 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
                   };
                 }
 
-                const removed = handler.catalogSelection.commitSelection(
+                await handler.commitCatalogSelection(
                   self.map,
                   layerName,
                   resource,
-                  true
-                );
-                await handler.catalogSelection.runWithSelfCommit(
-                  self.map,
-                  async () => {
-                    await handler.removePhysicalResources(
-                      self.map,
-                      removed.removeResources,
-                      self,
-                      layerName
-                    );
-                  }
+                  prepared.releaseNodeIds
                 );
                 handler.attachCatalogTileFailureWatcher(
                   self.map,
@@ -817,7 +787,16 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             return handler.catalogSelection.withRadioGroupLock(
               self.map,
               radioParent,
-              runAdd
+              async () => {
+                try {
+                  return await handler.attributeEditing.withLayerRemovalConsent(
+                    self.map, handler.removalLayers(self.map, prepared.releaseNodeIds), runAdd
+                  );
+                } finally {
+                  handler.catalogSelection.clearPendingReplacement(self.map, layerName);
+                  handler.syncRadioCheckedState(self);
+                }
+              }
             );
           }
           return runAdd();
@@ -887,21 +866,21 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
         const resource = catalogNode?.resource;
         const radioParent = this.configLookup.getRadioGroupParent(nodeId);
 
-        const register = (): void => {
-          const removed = this.catalogSelection.registerExternalClaim(
-            map,
-            nodeId,
-            resource,
-            this.configLookup
-          );
-          void this.catalogSelection.runWithSelfCommit(map, async () => {
-            await this.removePhysicalResources(
-              map,
-              removed.removeResources,
-              undefined,
-              nodeId
-            );
-          });
+        const register = async (): Promise<void> => {
+          if (!this.catalogSelection.isNodeSelected(map, nodeId)) {
+            const prepared = this.catalogSelection.prepareSelection(map, nodeId, resource, this.configLookup);
+            let committed = false;
+            try {
+              await this.attributeEditing.withLayerRemovalConsent(map,
+                this.removalLayers(map, prepared.releaseNodeIds), async () => {
+                  await this.commitCatalogSelection(map, nodeId, resource, prepared.releaseNodeIds);
+                  committed = true;
+                });
+              if (!committed) await this.removeCatalogPhysicalLayer(map, layer);
+            } finally {
+              this.catalogSelection.clearPendingReplacement(map, nodeId);
+            }
+          }
           const catalog = this.findLayerCatalogControl(map, TC);
           if (catalog) {
             this.afterCatalogClaimCommitted(map, catalog);
@@ -913,11 +892,11 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
             map,
             radioParent,
             async () => {
-              register();
+              await register();
             }
           );
         } else {
-          register();
+          await register();
         }
       });
     };
@@ -933,6 +912,13 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
         return;
       }
       const removedLayer = layer?.layer ?? layer;
+      // WFSEdit owns and removes stealth/owned edit copies while ending a
+      // session. They may inherit the catalog nodeId from the source layer,
+      // but are not catalog claims and must not unload the source layer.
+      if (removedLayer?.owner || removedLayer?.options?.owner ||
+          removedLayer?.options?.stealth === true && removedLayer?.wmsLayer) {
+        return;
+      }
       const nodeId = this.catalogSelection.resolveNodeId(removedLayer ?? {});
       if (!nodeId) {
         return;
@@ -2358,19 +2344,72 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
     nodeIds: string[],
     catalogControl: any | undefined
   ): Promise<void> {
-    const removeResources = new Set<string>();
-    for (const nodeId of nodeIds) {
-      const removed = this.catalogSelection.deselectNode(map, nodeId);
-      for (const resource of removed.removeResources) {
-        removeResources.add(resource);
+    await this.catalogSelection.runExclusive(map, async () => {
+      const layers = this.removalLayers(map, nodeIds);
+      try {
+        await this.attributeEditing.withLayerRemovalConsent(map, layers, async () => {
+          for (const layer of layers) await this.removeCatalogPhysicalLayer(map, layer);
+          for (const nodeId of nodeIds) {
+            const resource = this.configLookup.findNode(nodeId)?.resource;
+            const failed = layers.some((layer) => this.layerIsPresent(map, layer) &&
+              (this.catalogSelection.resolveNodeId(layer) === nodeId || resource &&
+                this.configLookup.findNode(this.catalogSelection.resolveNodeId(layer)!)?.resource === resource));
+            if (!failed) this.catalogSelection.deselectNode(map, nodeId);
+          }
+        });
+      } finally {
+        if (catalogControl) this.syncRadioCheckedState(catalogControl);
+      }
+    });
+  }
+
+  private async commitCatalogSelection(map: any, nodeId: string, resource: string | undefined,
+    previousIds: readonly string[]): Promise<void> {
+    const layers = this.removalLayers(map, previousIds).filter((layer: any) =>
+      !resource || this.configLookup.findNode(this.catalogSelection.resolveNodeId(layer)!)?.resource !== resource);
+    for (const layer of layers) await this.removeCatalogPhysicalLayer(map, layer);
+    for (const previousId of previousIds) {
+      const previousResource = this.configLookup.findNode(previousId)?.resource;
+      if (!layers.some((layer: any) => this.layerIsPresent(map, layer) &&
+          this.configLookup.findNode(this.catalogSelection.resolveNodeId(layer)!)?.resource === previousResource)) {
+        this.catalogSelection.deselectNode(map, previousId);
       }
     }
-    await this.removePhysicalLayersByNodeIds(map, nodeIds, catalogControl);
-    await this.removePhysicalResources(
-      map,
-      [...removeResources],
-      catalogControl
-    );
+    // Avoid commitSelection releasing a surviving claim after a partial failure.
+    this.catalogSelection.clearPendingReplacement(map, nodeId);
+    this.catalogSelection.commitSelection(map, nodeId, resource, true);
+  }
+
+  /** Include shared representatives only when every claim is being released. */
+  private removalLayers(map: any, nodeIds: readonly string[]): any[] {
+    const wanted = new Set(nodeIds);
+    const selected = [...this.catalogSelection.getSelectedNodes(map)];
+    return this.listWorkLayers(map).filter((layer: any) => {
+      if (layer?.owner || layer?.options?.owner || layer?.options?.stealth) return false;
+      const nodeId = this.catalogSelection.resolveNodeId(layer ?? {});
+      if (!nodeId) return false;
+      const resource = this.configLookup.findNode(nodeId)?.resource;
+      if (!resource) return wanted.has(nodeId);
+      const claims = selected.filter((id) => this.configLookup.findNode(id)?.resource === resource);
+      return (wanted.has(nodeId) || claims.some((id) => wanted.has(id))) &&
+        claims.every((id) => wanted.has(id));
+    });
+  }
+
+  private layerIsPresent(map: any, layer: any): boolean {
+    return this.listWorkLayers(map).some((candidate: any) => candidate === layer ||
+      layer?.id != null && candidate?.id === layer.id);
+  }
+
+  private async removeCatalogPhysicalLayer(map: any, layer: any): Promise<boolean> {
+    try {
+      await this.catalogSelection.runWithSelfCommit(map, () => map.removeLayer(layer));
+    } catch {
+      // Reconcile from effective presence, including partial native failures.
+    }
+    if (this.layerIsPresent(map, layer)) return false;
+    this.scrubWorkLayerManagerRow(map, layer?.id);
+    return true;
   }
 
   private async removePhysicalLayersByNodeIds(
@@ -2393,14 +2432,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
         (layer?.id != null && typeof map.getLayer === 'function'
           ? map.getLayer(layer.id)
           : null) ?? layer;
-      try {
-        await this.catalogSelection.runWithSelfCommit(map, () =>
-          map.removeLayer(target)
-        );
-        this.scrubWorkLayerManagerRow(map, target?.id ?? layer?.id);
-      } catch {
-        // Keep removing remaining matches if one removeLayer rejects.
-      }
+      await this.removeCatalogPhysicalLayer(map, target);
     }
     if (catalogControl) {
       this.syncRadioCheckedState(catalogControl);
@@ -2412,7 +2444,7 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
    * SITNA's async updateLayerTree wins the race. Scrub the known row id now.
    */
   private scrubWorkLayerManagerRow(map: any, layerId: string | undefined): void {
-    if (!layerId || !map) {
+    if (!layerId || !map || this.listWorkLayers(map).some((layer: any) => layer?.id === layerId)) {
       return;
     }
     const TC = this.sitnaApi.getTC();
@@ -2429,41 +2461,6 @@ export class LayerCatalogControlHandler extends ControlHandlerBase {
       div
         ?.querySelectorAll(`li.tc-ctl-wlm-elm[data-layer-id="${layerId}"]`)
         .forEach((li) => li.remove());
-    }
-  }
-
-  private async removePhysicalResources(
-    map: any,
-    resources: string[],
-    catalogControl: any | undefined,
-    keepNodeId?: string
-  ): Promise<void> {
-    if (!map || resources.length === 0) {
-      return;
-    }
-    const layers = [
-      ...(Array.isArray(map.workLayers)
-        ? map.workLayers
-        : Array.isArray(map.layers)
-        ? map.layers
-        : [])
-    ];
-    for (const layer of layers) {
-      const nodeId = this.catalogSelection.resolveNodeId(layer ?? {});
-      if (!nodeId || nodeId === keepNodeId) {
-        continue;
-      }
-      const resource = this.configLookup.findNode(nodeId)?.resource;
-      if (resource && resources.includes(resource)) {
-        if (typeof map.removeLayer === 'function') {
-          await this.catalogSelection.runWithSelfCommit(map, () =>
-            map.removeLayer(layer)
-          );
-        }
-      }
-    }
-    if (catalogControl) {
-      this.syncRadioCheckedState(catalogControl);
     }
   }
 

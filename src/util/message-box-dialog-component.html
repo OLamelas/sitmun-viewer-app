@@ -4,11 +4,11 @@
 </mat-dialog-content>
 <mat-dialog-actions>
   @if (type === types.CONFIRM) {
-  <button mat-button [mat-dialog-close]="false">
+  <button mat-button class="sitmun-message-box-cancel" [mat-dialog-close]="false">
     <mat-icon>undo</mat-icon>
-    Cancelar
+    {{cancelLabel}}
   </button>
-  <button mat-button [mat-dialog-close]="true">Continuar</button>
+  <button mat-button [color]="destructive ? 'warn' : undefined" [mat-dialog-close]="true">{{confirmLabel}}</button>
   } @if (type === types.ALERT) {
   <button mat-button [mat-dialog-close]="true">Cerrar</button>
   }

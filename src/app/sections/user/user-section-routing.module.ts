@@ -7,6 +7,7 @@ import { MapComponent } from '@sections/user/map/map.component';
 
 import { ProfileComponent } from './profile/profile.component';
 import { sitnaMapGuard } from '../../guards/sitna-map.guard';
+import { mapEditingDeactivateGuard, mapEditingReuseGuard } from '../../guards/map-editing.guard';
 import { ApplicationComponent } from '../common/pages/application/application.component';
 import { TerritoryComponent } from '../common/pages/territory/territory.component';
 
@@ -16,7 +17,9 @@ const routes: Routes = [
   {
     path: 'map/:applicationId/:territoryId',
     component: MapComponent,
-    canActivate: [sitnaMapGuard]
+    canActivate: [mapEditingReuseGuard, sitnaMapGuard],
+    canDeactivate: [mapEditingDeactivateGuard],
+    runGuardsAndResolvers: 'paramsChange'
   },
   { path: 'territory/:territoryId', component: TerritoryComponent },
   { path: 'application/:applicationId', component: ApplicationComponent },

@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 
 import {
   URL_API_CONFIGURATION_PARAMETERS,
@@ -12,15 +12,22 @@ import { AuthenticationService } from '@auth/services/authentication.service';
 import { TranslateService } from '@ngx-translate/core';
 import {
   BehaviorSubject,
+  defer,
+  EMPTY,
+  from,
   catchError,
   firstValueFrom,
+  finalize,
   map,
   Observable,
   of,
-  tap
+  switchMap,
+  tap,
+  take
 } from 'rxjs';
 import { AppConfigService } from 'src/app/services/app-config.service';
 import { environment } from 'src/environments/environment';
+import { FeatureAttributeEditingService } from './feature-attribute-editing.service';
 
 import {
   filterEnabledLanguages,
@@ -32,6 +39,7 @@ import {
   providedIn: 'root'
 })
 export class LanguageService {
+  private readonly editing = inject(FeatureAttributeEditingService);
   constructor(
     private i18nService: I18nService,
     private appConfigService: AppConfigService,
@@ -154,21 +162,38 @@ export class LanguageService {
   }
 
   setLanguage(lang: string, syncBackend = true): Observable<void> {
-    localStorage.setItem(this.STORED_LANGUAGE, lang);
-    this.translateService.use(lang);
-
-    if (syncBackend && this.authenticationService.isLoggedIn()) {
-      const languageDTO: LanguageDTO = { name: lang, shortname: lang };
-      return this.i18nService.updateUserLanguage(languageDTO).pipe(
-        map(() => undefined),
-        catchError(() => {
-          console.warn('Failed to sync language with backend');
-          return of(undefined);
-        })
+    return defer(() => {
+      if (lang === this.translateService.currentLang) return of(undefined);
+      const transition = this.editing.reserveMapTransition();
+      if (!transition) return EMPTY;
+      return from(this.editing.authorizeMapTransition(transition)).pipe(
+        switchMap((allowed) => allowed
+          // Preload without use(): ngx-translate's shared loader may finish even
+          // after unsubscribe. A late preload must never publish onLangChange.
+          ? (this.translateService.translations?.[lang] !== undefined
+            ? of(this.translateService.translations[lang])
+            : this.translateService.getTranslation(lang).pipe(take(1))) : EMPTY),
+        switchMap(() => {
+          if (!this.editing.mapTransitionIsCurrent(transition)) return EMPTY;
+          // The translation is cached: the listener consumes this authorization
+          // synchronously, immediately before clearing the original map.
+          return this.translateService.use(lang).pipe(take(1));
+        }),
+        tap(() => localStorage.setItem(this.STORED_LANGUAGE, lang)),
+        tap(() => this.editing.releaseMapTransition(transition)),
+        switchMap(() => {
+          if (!syncBackend || !this.authenticationService.isLoggedIn()) return of(undefined);
+          return this.i18nService.updateUserLanguage({ name: lang, shortname: lang }).pipe(
+            map(() => undefined),
+            catchError(() => {
+              console.warn('Failed to sync language with backend');
+              return of(undefined);
+            })
+          );
+        }),
+        finalize(() => this.editing.releaseMapTransition(transition))
       );
-    }
-
-    return of(undefined);
+    });
   }
 
   getLanguageName(languages: LanguageDTO[], shortname: string): string {
@@ -208,16 +233,15 @@ export class LanguageService {
   loadUserLanguage(): Observable<string> {
     if (this.authenticationService.isLoggedIn()) {
       return this.http.get<LanguageDTO>(URL_API_I18N_LANGUAGE).pipe(
-        map((languageDto: LanguageDTO) => {
+        switchMap((languageDto: LanguageDTO) => {
           const lang =
             languageDto?.shortname ||
             languageDto?.name ||
             this.getCurrentLanguage();
           if (lang && lang !== this.getCurrentLanguage()) {
-            localStorage.setItem('language', lang);
-            this.translateService.use(lang);
+            return this.setLanguage(lang, false).pipe(map(() => lang));
           }
-          return lang;
+          return of(lang);
         }),
         catchError(() => of(this.getCurrentLanguage()))
       );

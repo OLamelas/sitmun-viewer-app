@@ -2099,8 +2099,11 @@ describe('LayerCatalogControlHandler', () => {
       await patchWithTc(TC);
       const _layerA = { options: { nodeId: 'node/a' } };
       const workLayers: Array<{ options: { nodeId: string } }> = [];
-      const removeLayer = jest.fn().mockResolvedValue(undefined);
-      const map = {
+      const removeLayer = jest.fn().mockImplementation(async (target: any) => {
+        const index = workLayers.indexOf(target);
+        if (index >= 0) workLayers.splice(index, 1);
+      });
+      const map: any = {
         crs: 'EPSG:25831',
         addLayer: jest.fn().mockImplementation(async (opts: { nodeId?: string }) => {
           const layer = { options: { nodeId: opts.nodeId ?? 'unknown' } };
@@ -2215,6 +2218,13 @@ describe('LayerCatalogControlHandler', () => {
       );
       expect(selection.isNodeSelected(map, 'node/a')).toBe(true);
 
+      // WFSEdit-owned helper layers can copy nodeId from the catalog layer.
+      // Removing one must not release the source layer's catalog claim.
+      listeners['layerremove'][0]?.({
+        layer: { owner: {}, options: { nodeId: 'node/a', stealth: true } }
+      });
+      expect(selection.isNodeSelected(map, 'node/a')).toBe(true);
+
       listeners['layerremove'][0]?.({
         options: { layerNames: 'layer/a' }
       });
@@ -2231,7 +2241,7 @@ describe('LayerCatalogControlHandler', () => {
       };
       const layerA = { options: { nodeId: 'node/a' } };
       const layerB = { options: { nodeId: 'node/b' } };
-      const map = {
+      const map: any = {
         crs: 'EPSG:25831',
         addLayer: jest.fn().mockResolvedValue(layerA),
         removeLayer: jest.fn(),
@@ -2241,6 +2251,10 @@ describe('LayerCatalogControlHandler', () => {
         off: jest.fn(),
         workLayers: [layerA]
       };
+      map.removeLayer.mockImplementation(async (target: any) => {
+        const index = map.workLayers.indexOf(target);
+        if (index >= 0) map.workLayers.splice(index, 1);
+      });
       const ctx = {
         map,
         getUID: () => 'uid-1',
@@ -2255,11 +2269,13 @@ describe('LayerCatalogControlHandler', () => {
 
       await Promise.all([
         Promise.resolve().then(async () => {
+          if (!map.workLayers.includes(layerB)) map.workLayers.push(layerB);
           listeners['layeradd'][0]?.(layerB);
           await Promise.resolve();
         }),
         Promise.resolve().then(async () => {
           await Promise.resolve();
+          if (!map.workLayers.includes(layerB)) map.workLayers.push(layerB);
           listeners['layeradd'][0]?.(layerB);
           await Promise.resolve();
         })
@@ -4704,14 +4720,11 @@ describe('LayerCatalogControlHandler', () => {
       removeLayer.mockClear();
       (catalog.addLayerToMap as jest.Mock).mockClear();
 
-      const loadCheckbox = catalog.div.querySelector(
-        'input.sitmun-lcat-load[data-layer-name="node/folder"]'
-      ) as HTMLInputElement;
-      loadCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      // Let the external-remove event bridge reconcile A/B before requesting
+      // folder unload; await the actual async handler rather than sampling a
+      // fire-and-forget DOM listener after an arbitrary number of microtasks.
       await selection.runExclusive(map, async () => undefined);
+      await (handler as any).handleLoadDataFolderCheckboxClick(catalog, 'node/folder');
 
       expect(catalog.addLayerToMap).not.toHaveBeenCalled();
       expect(removeLayer).toHaveBeenCalled();

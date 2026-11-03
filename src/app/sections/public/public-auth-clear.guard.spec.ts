@@ -1,6 +1,7 @@
 import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, fakeAsync, flush } from '@angular/core/testing';
+import { Router } from '@angular/router';
 
 import { URL_AUTH_LOGOUT } from '@api/api-config';
 import { AUTH_CONFIG_DI } from '@auth/authentication.options';
@@ -12,6 +13,7 @@ import { publicAuthClearGuard } from './public-auth-clear.guard';
 import { environment } from '../../../environments/environment';
 import { IndexedDbService } from '../../auth/services/indexed-db.service';
 import { NotificationService } from '../../notifications/services/NotificationService';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 
 describe('publicAuthClearGuard', () => {
   let clearAuthentication: jest.Mock;
@@ -26,6 +28,7 @@ describe('publicAuthClearGuard', () => {
     TestBed.configureTestingModule({
       imports: [TranslateModule.forRoot()],
       providers: [
+        { provide: FeatureAttributeEditingService, useValue: { confirmNavigationAbandonment: jest.fn().mockResolvedValue(true) } },
         {
           provide: AuthenticationService,
           useValue: { clearAuthentication }
@@ -60,6 +63,22 @@ describe('publicAuthClearGuard', () => {
     expect(canActivate).toBe(true);
     expect(clearAuthentication).toHaveBeenCalled();
     expect(warning).not.toHaveBeenCalled();
+  }));
+
+  it('never starts authentication cleanup before consent on a reused public map', fakeAsync(() => {
+    const routeConfig = { path: 'map/:applicationId/:territoryId' };
+    const router = TestBed.inject(Router);
+    jest.spyOn(router.routerState.snapshot, 'root', 'get').mockReturnValue({ routeConfig } as never);
+    const editing = TestBed.inject(FeatureAttributeEditingService);
+    (editing.confirmNavigationAbandonment as jest.Mock).mockResolvedValue(false);
+    let allowed: unknown;
+    TestBed.runInInjectionContext(() => {
+      toObservable(publicAuthClearGuard({ routeConfig } as never, {} as never)).subscribe((value) => { allowed = value; });
+    });
+    expect(clearAuthentication).not.toHaveBeenCalled();
+    flush();
+    expect(allowed).toBe(false);
+    expect(clearAuthentication).not.toHaveBeenCalled();
   }));
 
   it('allows activation when clearAuthentication fails after local cleanup', fakeAsync(() => {

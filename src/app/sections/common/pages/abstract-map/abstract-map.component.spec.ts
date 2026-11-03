@@ -1,18 +1,20 @@
 import { Location } from '@angular/common';
 import { Directive, ElementRef, Injector, Renderer2 } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import type { AppCfg, GeneralCfg } from '@api/model/app-cfg';
 import { CommonService } from '@api/services/common.service';
 import { TranslateService } from '@ngx-translate/core';
-import { of } from 'rxjs';
+import { of, EMPTY, Subject } from 'rxjs';
 import { LayerCatalogControlHandler } from 'src/app/controls/handlers/layer-catalog-control.handler';
 import { AppConfigService } from 'src/app/services/app-config.service';
 import { ConfigLookupService } from 'src/app/services/config-lookup.service';
 import { ControlRegistryService } from 'src/app/services/control-registry.service';
 import { MapConfigurationService } from 'src/app/services/map-configuration.service';
+import { MapFeaturePanelService } from 'src/app/services/map-feature-panel.service';
+import { FeatureAttributeEditingService } from 'src/app/services/feature-attribute-editing.service';
 import { MapInterfaceService } from 'src/app/services/map-interface.service';
 import { MapServiceWorkerService } from 'src/app/services/map-service-worker.service';
 import { MoreInfoAdvancedService } from 'src/app/services/more-info-advanced.service';
@@ -50,8 +52,8 @@ class TestMapComponent extends AbstractMapComponent {
     (this as any).clearMap();
   }
 
-  exposeUpdateCatalog(): void {
-    this.updateCatalog();
+  exposeUpdateCatalog(): Promise<void> {
+    return this.updateCatalog();
   }
 
   exposeLoadMap(cfg: GeneralCfg): Promise<void> {
@@ -126,6 +128,12 @@ describe('AbstractMapComponent lifecycle', () => {
     TestBed.configureTestingModule({
       providers: [
         TestMapComponent,
+        { provide: FeatureAttributeEditingService, useValue: {
+          confirmNavigationAbandonment: jest.fn().mockResolvedValue(true),
+          consumeMapTransition: jest.fn().mockReturnValue(true),
+          invalidateMapTransition: jest.fn()
+        } },
+        { provide: MapFeaturePanelService, useValue: { destroyMap: jest.fn() } },
         { provide: LayerCatalogControlHandler, useValue: layerCatalogHandler },
         {
           provide: MoreInfoAdvancedService,
@@ -231,11 +239,74 @@ describe('AbstractMapComponent lifecycle', () => {
     expect(layerCatalogHandler.applyDefaultWorkingLayers).toBeDefined();
   });
 
+  it('consumes language authorization before clearMap and leaves an unauthorized map intact', () => {
+    const languageChanges = new Subject<any>();
+    const translate = TestBed.inject(TranslateService);
+    (translate as any).onLangChange = languageChanges;
+    (TestBed.inject(ActivatedRoute) as any).params = EMPTY;
+    (TestBed.inject(AppConfigService).getLocaleForLanguage as any) = (lang: string) => lang;
+    const fetch = TestBed.inject(CommonService).fetchMapConfiguration as jest.Mock;
+    fetch.mockReturnValue(EMPTY);
+    const clear = jest.spyOn(component, 'clearMap').mockImplementation(() => {});
+    const editing = TestBed.inject(FeatureAttributeEditingService);
+    const consume = editing.consumeMapTransition as jest.Mock;
+    const originalMap = { id: 'original' };
+    component.setMap(originalMap);
+    component.applicationId = 1;
+    component.territoryId = 2;
+    component.ngOnInit();
+    translate.currentLang = 'ca';
+    consume.mockReturnValue(false);
+    languageChanges.next({ lang: 'ca' });
+    expect(clear).not.toHaveBeenCalled();
+    expect(component.locale).toBe('es');
+    expect(fetch).not.toHaveBeenCalled();
+    consume.mockReturnValue(true);
+    languageChanges.next({ lang: 'ca' });
+    expect(consume).toHaveBeenLastCalledWith(originalMap);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(consume.mock.invocationCallOrder.at(-1)).toBeLessThan(clear.mock.invocationCallOrder[0]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    component.exposeDestroy();
+  });
+
   it('clearMapArtifacts runs when clearMap is invoked', () => {
     const oldMap = { id: 'old-map' };
     component.setMap(oldMap);
     component.exposeClearMap();
     expect(controlRegistry.clearMapArtifacts).toHaveBeenCalledWith(oldMap);
+    const destroyPanels = TestBed.inject(MapFeaturePanelService).destroyMap as jest.Mock;
+    expect(destroyPanels).toHaveBeenCalledTimes(1);
+    expect(destroyPanels.mock.invocationCallOrder[0]).toBeLessThan(controlRegistry.clearMapArtifacts.mock.invocationCallOrder[0]);
+  });
+
+  it.each([true, false])('revalidates route consent only at actual debounced teardown (authorized=%s)', (authorized) => {
+    fakeAsync(() => {
+      const params = new Subject<Record<string, string>>();
+      (TestBed.inject(ActivatedRoute) as any).params = params;
+      const fetch = TestBed.inject(CommonService).fetchMapConfiguration as jest.Mock;
+      fetch.mockReturnValue(EMPTY);
+      const editing = TestBed.inject(FeatureAttributeEditingService);
+      const consume = editing.consumeMapTransition as jest.Mock;
+      consume.mockReturnValue(authorized);
+      const clear = jest.spyOn(component, 'clearMap').mockImplementation(() => {});
+      const oldMap = { id: 'editing-map' };
+      component.setMap(oldMap);
+      component.applicationId = 1;
+      component.territoryId = 2;
+      component.ngOnInit();
+      params.next({ applicationId: '3', territoryId: '4' });
+      tick(299);
+      expect(consume).not.toHaveBeenCalled();
+      expect(clear).not.toHaveBeenCalled();
+      tick(1);
+      expect(consume).toHaveBeenCalledWith(oldMap);
+      expect(clear).toHaveBeenCalledTimes(authorized ? 1 : 0);
+      expect(fetch).toHaveBeenCalledTimes(authorized ? 1 : 0);
+      expect(component.applicationId).toBe(authorized ? 3 : 1);
+      if (authorized) expect(consume.mock.invocationCallOrder[0]).toBeLessThan(clear.mock.invocationCallOrder[0]);
+      component.exposeDestroy();
+    })();
   });
 
   it('clearMapArtifacts runs before catalog switch rebuild', async () => {
@@ -245,8 +316,22 @@ describe('AbstractMapComponent lifecycle', () => {
 
     component.exposeUpdateCatalog();
     await Promise.resolve();
+    await Promise.resolve();
 
     expect(controlRegistry.clearMapArtifacts).toHaveBeenCalledWith(oldMap);
+  });
+
+  it('does not rebuild controls or destroy the map if catalog abandonment is cancelled', async () => {
+    const editing = TestBed.inject(FeatureAttributeEditingService);
+    (editing.confirmNavigationAbandonment as jest.Mock).mockResolvedValue(false);
+    const map = { id: 'editing-map' };
+    component.setMap(map);
+    component.setConfigs(appCfg, generalCfg);
+    await component.updateCatalog('tree/2');
+    expect(editing.confirmNavigationAbandonment).toHaveBeenCalledWith(map);
+    expect(controlRegistry.processControls).not.toHaveBeenCalled();
+    expect(controlRegistry.clearMapArtifacts).not.toHaveBeenCalled();
+    expect(TestBed.inject(MapFeaturePanelService).destroyMap).not.toHaveBeenCalled();
   });
 
   it('awaits default working layers before resolving map load', async () => {
@@ -308,11 +393,13 @@ describe('AbstractMapComponent lifecycle', () => {
     component.setMap(oldMap);
     component.setConfigs(appCfg, generalCfg);
 
-    component.exposeUpdateCatalog();
-    await Promise.resolve();
+    const update = component.exposeUpdateCatalog();
+    // updateCatalog awaits both abandonment consent and control registration;
+    // allow those queued continuations to create the replacement map first.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     await loadedCallback?.();
-    await Promise.resolve();
+    await update;
 
     expect(controlRegistry.clearMapArtifacts).toHaveBeenCalledWith(oldMap);
     expect(layerCatalogHandler.applyDefaultWorkingLayers).toHaveBeenCalledTimes(1);

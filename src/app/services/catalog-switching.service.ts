@@ -186,21 +186,30 @@ export class CatalogSwitchingService {
       return;
     }
 
-    layerCatalogsForModal.currentTreeId = selectedTreeId;
-
-    this.updateChangeTopicButtonTooltip();
-
     const abstractMapObject = this.sitnaApi.getGlobal('abstractMapObject');
     if (
       abstractMapObject &&
       typeof abstractMapObject.updateCatalog === 'function'
     ) {
-      abstractMapObject.updateCatalog();
+      // The map guards the intention before changing the catalog ID or controls.
+      void Promise.resolve(abstractMapObject.updateCatalog(selectedTreeId)).then(() => {
+        this.updateChangeTopicButtonTooltip();
+        const panel = document.getElementById('catalog-projects');
+        if (panel) this.syncProjectsSelection(panel);
+      }).catch((error) => console.error('[CatalogSwitching] Catalog transition failed:', error));
     } else {
       console.warn(
         '[CatalogSwitching] abstractMapObject.updateCatalog not available, catalog switch may require manual reload'
       );
     }
+  }
+
+  private syncProjectsSelection(panel: ParentNode): void {
+    const current = this.getCurrentTreeId();
+    panel.querySelectorAll('.tc-ctl-lcat-proj-catalog').forEach((item) => {
+      const input = item.querySelector<HTMLInputElement>('.tc-ctl-lcat-proj-catalog-id');
+      item.classList.toggle('tc-ctl-lcat-proj-selected', !!input && String(input.value) === String(current));
+    });
   }
 
   /**
@@ -458,21 +467,7 @@ export class CatalogSwitchingService {
         projectsPanel.innerHTML = '';
         projectsPanel.appendChild(content.cloneNode(true));
 
-        const currentTreeId = layerCatalogsForModal.currentTreeId;
-        const catalogItems = projectsPanel.querySelectorAll(
-          '.tc-ctl-lcat-proj-catalog'
-        );
-        catalogItems.forEach((item: Element) => {
-          const catalogIdInput = item.querySelector(
-            '.tc-ctl-lcat-proj-catalog-id'
-          ) as HTMLInputElement;
-          if (
-            catalogIdInput &&
-            String(catalogIdInput.value) === String(currentTreeId)
-          ) {
-            item.classList.add('tc-ctl-lcat-proj-selected');
-          }
-        });
+        this.syncProjectsSelection(projectsPanel);
 
         this.pendingSelectedTreeId = String(
           layerCatalogsForModal.currentTreeId

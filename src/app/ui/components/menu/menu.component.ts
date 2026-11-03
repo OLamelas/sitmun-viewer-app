@@ -136,8 +136,8 @@ export class MenuComponent implements OnInit, OnDestroy {
   }
 
   selectLanguage(languageShortname: string) {
-    this.currentLang = languageShortname;
     this.languageService.setLanguage(languageShortname).subscribe(() => {
+      this.currentLang = languageShortname;
       this.loadLanguages();
       this.languageEvent.emit(languageShortname);
     });

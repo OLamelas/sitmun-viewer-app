@@ -9,6 +9,7 @@ import { PublicMapComponent } from '@sections/public/public-map/public-map.compo
 
 import { publicAuthClearGuard } from './public-auth-clear.guard';
 import { sitnaMapGuard } from '../../guards/sitna-map.guard';
+import { mapEditingDeactivateGuard } from '../../guards/map-editing.guard';
 
 const routes: Routes = [
   { path: '', redirectTo: RoutingDefault.Auth, pathMatch: 'full' },
@@ -16,7 +17,9 @@ const routes: Routes = [
   {
     path: 'map/:applicationId/:territoryId',
     component: PublicMapComponent,
-    canActivate: [publicAuthClearGuard, sitnaMapGuard]
+    canActivate: [publicAuthClearGuard, sitnaMapGuard],
+    canDeactivate: [mapEditingDeactivateGuard],
+    runGuardsAndResolvers: 'paramsChange'
   },
   { path: 'territory/:territoryId', component: TerritoryComponent, canActivate: [publicAuthClearGuard] },
   { path: 'application/:applicationId', component: ApplicationComponent, canActivate: [publicAuthClearGuard] }

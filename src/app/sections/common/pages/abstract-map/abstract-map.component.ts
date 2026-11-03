@@ -33,6 +33,8 @@ import { AppConfigService } from 'src/app/services/app-config.service';
 import { ConfigLookupService } from 'src/app/services/config-lookup.service';
 import { ControlRegistryService } from 'src/app/services/control-registry.service';
 import { MapConfigurationService } from 'src/app/services/map-configuration.service';
+import { MapFeaturePanelService } from 'src/app/services/map-feature-panel.service';
+import { FeatureAttributeEditingService } from 'src/app/services/feature-attribute-editing.service';
 import { MapInterfaceService } from 'src/app/services/map-interface.service';
 import { MapServiceWorkerService } from 'src/app/services/map-service-worker.service';
 import { MoreInfoAdvancedService } from 'src/app/services/more-info-advanced.service';
@@ -59,10 +61,13 @@ export abstract class AbstractMapComponent implements OnInit, OnDestroy {
   protected loadingState: LoadingState = 'idle';
   private activeRequestId = 0;
   private loadId = 0;
+  private catalogUpdating = false;
   private readonly layerCatalogHandler = inject(LayerCatalogControlHandler);
   private readonly shareControlHandler = inject(ShareControlHandler);
   private readonly toolsPanelSplitter = inject(ToolsPanelSplitterService);
   private readonly moreInfoAdvancedService = inject(MoreInfoAdvancedService);
+  private readonly mapFeaturePanels = inject(MapFeaturePanelService);
+  private readonly attributeEditing = inject(FeatureAttributeEditingService);
   applicationId!: number;
   territoryId!: number;
   locale: string | undefined;
@@ -102,9 +107,11 @@ export abstract class AbstractMapComponent implements OnInit, OnDestroy {
         debounceTime(300),
         distinctUntilChanged(
           (a, b) =>
-            a['applicationId'] === b['applicationId'] &&
-            a['territoryId'] === b['territoryId']
+             a['applicationId'] === b['applicationId'] &&
+            a['territoryId'] === b['territoryId'] &&
+            a['lang'] === b['lang']
         ),
+        filter(() => this.attributeEditing.consumeMapTransition(this.map)),
         tap((params) => {
           this.applicationId = Number(params['applicationId']);
           this.territoryId = Number(params['territoryId']);
@@ -188,6 +195,7 @@ export abstract class AbstractMapComponent implements OnInit, OnDestroy {
           ),
           map(() => this.parseLang(this.translate.currentLang)),
           filter((newLocale) => newLocale !== this.locale),
+          filter(() => this.attributeEditing.consumeMapTransition(this.map)),
           tap((newLocale) => {
             this.locale = newLocale;
             this.loadingState = 'loading-config';
@@ -373,56 +381,48 @@ export abstract class AbstractMapComponent implements OnInit, OnDestroy {
     }
   }
 
-  updateCatalog() {
-    if (
-      this.currentAppCfg === undefined ||
-      this.currentGeneralCfg === undefined
-    ) {
-      return; // This is a safeguard, but it should never happen
-    }
+  canLeaveMap(): Promise<boolean> {
+    return this.attributeEditing.confirmNavigationAbandonment(this.map);
+  }
 
-    const layerCatalogsForModal = this.sitnaApi.getGlobal(
-      'layerCatalogsForModal'
-    );
-
-    if (layerCatalogsForModal) {
+  async updateCatalog(selectedTreeId?: string): Promise<void> {
+    if (this.catalogUpdating || !this.currentAppCfg || !this.currentGeneralCfg) return;
+    const layerCatalogsForModal = this.sitnaApi.getGlobal('layerCatalogsForModal');
+    if (!layerCatalogsForModal) return;
+    const previousMap = this.map;
+    this.catalogUpdating = true;
+    try {
+      if (!await this.canLeaveMap() || this.map !== previousMap || this.componentDestroyed.isStopped) return;
+      if (selectedTreeId !== undefined) layerCatalogsForModal.currentTreeId = selectedTreeId;
+      // Tear down synchronously after consent, before rebuilding async controls:
+      // no new edits may appear on the old map during processControls().
+      this.clearMap();
+      const rebuildId = this.loadId;
+      this.sitnaApi.setGlobal('layerCatalogsForModal', layerCatalogsForModal);
+      this.sitnaApi.setGlobal('currentAppCfg', this.currentAppCfg);
       // Rebuild controls to pick up the new currentTreeId. Full map reload is required
       // because the layer catalog is built at map init from config (no in-place refresh API).
-      this.controlRegistry
-        .processControls(this.currentAppCfg.tasks, this.currentAppCfg)
-        .then(async (controls) => {
-          if (!this.currentAppCfg || !this.currentGeneralCfg) {
-            return;
-          }
-          // Update stored config and pass a fresh object to loadMap so the new map gets the new controls
-          this.currentGeneralCfg.controls = controls as any;
-          const newCfg = {
-            ...this.currentGeneralCfg,
-            controls: this.currentGeneralCfg.controls
-          };
-          // Save catalog state built by processControls; clearMap will clear it
-          const savedCatalogState = this.sitnaApi.getGlobal(
-            'layerCatalogsForModal'
-          );
-          this.clearMap();
-          // Restore catalog state so injectCatalogSwitchingButton can find it during loadMap
-          if (savedCatalogState) {
-            this.sitnaApi.setGlobal('layerCatalogsForModal', savedCatalogState);
-          }
-          this.sitnaApi.setGlobal('currentAppCfg', this.currentAppCfg);
-          await this.loadMap(newCfg);
-          this.sitnaApi.setGlobal('abstractMapObject', this);
-        })
-        .catch((err) => {
-          console.error('[AbstractMapComponent] updateCatalog failed:', err);
-        });
+      const controls = await this.controlRegistry.processControls(this.currentAppCfg.tasks, this.currentAppCfg);
+      if (rebuildId !== this.loadId || this.componentDestroyed.isStopped) return;
+      this.currentGeneralCfg.controls = controls as any;
+      await this.loadMap({ ...this.currentGeneralCfg });
+      if (this.loadId === rebuildId + 1 && !this.componentDestroyed.isStopped) {
+        this.sitnaApi.setGlobal('abstractMapObject', this);
+      }
+    } catch (error) {
+      console.error('[AbstractMapComponent] updateCatalog failed:', error);
+    } finally {
+      this.catalogUpdating = false;
     }
   }
 
   clearMap() {
+    this.attributeEditing.invalidateMapTransition();
     this.loadId++;
     this.toolsPanelSplitter.unmount();
-    // Light handler teardown (MIA body overlay, LayerCatalog per-map state) — not cleanupAll.
+    const panelHost = this.el.nativeElement.querySelector(`#${MAP_CONTAINER_ID}`);
+    if (panelHost) this.mapFeaturePanels.destroyMap(panelHost);
+    // Light handler teardown (MIA work, LayerCatalog per-map state) — not cleanupAll.
     this.controlRegistry.clearMapArtifacts(this.map);
     this.sitnaApi.setGlobal('abstractMapObject', undefined);
     this.sitnaApi.setGlobal('layerCatalogsForModal', undefined);
