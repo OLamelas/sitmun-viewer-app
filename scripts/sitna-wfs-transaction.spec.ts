@@ -61,4 +61,19 @@ describe('SITNA WFS transactions', () => {
     await expect(request).rejects.toMatchObject({ reason: 'WFS geometry is missing from DescribeFeatureType' });
     expect(ajax).not.toHaveBeenCalled();
   });
+
+  it('runs the viewer attribute serializer before the existing POST and propagates serialization errors', async () => {
+    const ajax = jest.fn();
+    const feature = new Feature(new Point([0, 0]));
+    feature.setId('shops.1');
+    const serialize = jest.fn((_transaction: Element) => { throw new Error('Invalid structured attribute'); });
+    await expect(transactionWriter(ajax).call({ getLayer: async () => {}, parent: {
+      options: { featureType: ['menorca:shops'] }, capabilities: { 'xmlns:menorca': 'http://menorca' },
+      sitmunSerializeAttributeTransaction: serialize
+    } }, [], [{ wrap: { feature } }], [])).rejects.toMatchObject({ reason: 'Invalid structured attribute' });
+    expect(serialize).toHaveBeenCalledTimes(1);
+    expect(serialize.mock.calls[0][0]).toBeInstanceOf(Element);
+    expect(ajax).not.toHaveBeenCalled();
+    expect(feature.getGeometry()?.getCoordinates()).toEqual([0, 0]);
+  });
 });

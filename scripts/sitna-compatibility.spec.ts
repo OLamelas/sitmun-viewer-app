@@ -7,6 +7,7 @@ describe('SITNA compatibility', () => {
   it('can run the installation scripts repeatedly without changing the patched code', () => {
     const files = [
       'TC/control/PrintMap.js',
+      'TC/control/Edit.js',
       'TC/control/WFSEdit.js',
       'TC/control/AttributesEdit.js',
       'TC/tool/FeatureTypeParser.js',
@@ -59,5 +60,29 @@ describe('SITNA compatibility', () => {
     expect(getLayerTitle({ getPath: () => [], title: 'Shops', id: '9417' })).toBe('Shops');
     expect(getLayerTitle({ getPath: () => ['Menorca', 'Shops'], title: 'Shops' })).toBe('Menorca • Shops');
     expect(getLayerTitle({ getPath: () => [], id: '9417' })).toBe('9417');
+  });
+
+  it('forwards geometry edits to WFSEdit without duplicating elevation changes', () => {
+    const source = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/Edit.js'), 'utf8').replace(/\r\n/g, '\n');
+    const geometryModifyHandler = source.slice(
+      source.indexOf('self.modifyControl\n            .on(Consts.event.FEATUREMODIFY'),
+      source.indexOf("const onFeaturesSelectionChange", source.indexOf('self.modifyControl\n            .on(Consts.event.FEATUREMODIFY'))
+    );
+
+    expect(geometryModifyHandler).toContain('const elevationChangeEmitted = await addElevation(e.feature);');
+    expect(geometryModifyHandler).toContain('if (!elevationChangeEmitted)');
+    expect(geometryModifyHandler).toContain('self.trigger(Consts.event.FEATUREMODIFY, { ...e });');
+    expect(source).toContain('let emittedChange = false;');
+  });
+
+  it('forwards geometry undo and redo and clears reverted WFS modifications', () => {
+    const editSource = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/Edit.js'), 'utf8').replace(/\r\n/g, '\n');
+    const wfsSource = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/WFSEdit.js'), 'utf8').replace(/\r\n/g, '\n');
+
+    expect(editSource).toContain("self.history.addEventListener('undo'");
+    expect(editSource).toContain("self.history.addEventListener('redo'");
+    expect(wfsSource).toContain('layerEditData.beforeEditLayer?.getFeatureById(fid)');
+    expect(wfsSource).toContain('layerEditData.modifiedFeaturesLayer.removeFeature(storedFeature);');
+    expect(wfsSource).toContain('deleteFeature(self.#getModifiedStoragePrefix() + fid)');
   });
 });
