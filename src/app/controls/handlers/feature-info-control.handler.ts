@@ -13,6 +13,7 @@ import { settleHtmlGfiIframes } from './html-gfi-embed.util';
 import { FeatureInfoMoreInfoHandler } from './more-info.handler';
 import { installPopupDragReleasePatch } from './popup-drag-release';
 import { MoreInfoService } from '../../services/more-info.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
 import type { Meld, MeldJoinPoint } from '../../types/meld.types';
 import { ControlHandlerBase } from '../control-handler-base';
@@ -44,6 +45,7 @@ export class FeatureInfoControlHandler extends ControlHandlerBase {
   readonly sitnaConfigKey = 'featureInfo';
   readonly requiredPatches = undefined;
   private readonly moreInfoService = inject(MoreInfoService);
+  private readonly attributeEditing = inject(FeatureAttributeEditingService);
   private readonly translateService = inject(TranslateService);
   private readonly mapEventCleanups: Array<() => void> = [];
   private appConfig: AppCfg | null = null;
@@ -231,6 +233,11 @@ export class FeatureInfoControlHandler extends ControlHandlerBase {
           'responseCallback',
           (jp: MeldJoinPoint) => {
             const [options] = jp.args as [any];
+            const control = jp.target as { map?: unknown };
+            if (this.attributeEditing.isEditingMap(control.map)) {
+              // Do not add consultation-only fields or launch MIA SQL while editing.
+              return jp.proceedApply(jp.args);
+            }
             this.overlayServices = options?.services;
             this.overlayPlans = planFeatureInfoOverlay(
               options?.services,
@@ -249,6 +256,7 @@ export class FeatureInfoControlHandler extends ControlHandlerBase {
 
             // After render, attach event listeners
             setTimeout(() => {
+              if (this.attributeEditing.isEditingMap(control.map)) return;
               this.applyFieldOverlay(jp.target as { div?: ParentNode });
               this.moreInfoHandler.attachMoreInfoListeners(jp.target);
             }, 100);

@@ -139,7 +139,7 @@ export interface SitnaElevationServiceOptions {
   url?: string;
 }
 
-export interface SitnaFeatureInfoOptions {
+export interface SitnaFeatureInfoOptions extends SitnaControlOptions {
   active?: boolean;
   persistentHighlights?: boolean;
   displayElevation?: boolean | SitnaElevationOptions;
@@ -418,7 +418,7 @@ export interface SitnaControlsWFSEdit extends SitnaControlOptions {
   styles?: SitnaStyleOptions;
 }
 
-export interface SitnaControlsWFSQuery {
+export interface SitnaControlsWFSQuery extends SitnaControlOptions {
   styles?: SitnaStyleOptions;
   highlightStyles?: SitnaStyleOptions;
   highLightStyles?: SitnaStyleOptions; // Legacy alias (capital L) supported by SITNA 4.8

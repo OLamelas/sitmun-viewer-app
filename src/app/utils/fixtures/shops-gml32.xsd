@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:menorca="http://menorca"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://menorca">
+  <xsd:import namespace="http://www.opengis.net/gml/3.2" schemaLocation="http://geoserver.local:8080/geoserver/schemas/gml/3.2.1/gml.xsd"/>
+  <xsd:complexType name="shopsType"><xsd:complexContent><xsd:extension base="gml:AbstractFeatureType">
+    <xsd:sequence>
+      <xsd:element name="gid" type="xsd:int" minOccurs="0" maxOccurs="1" nillable="true"/>
+      <xsd:element name="category" type="xsd:string" minOccurs="1" maxOccurs="1" nillable="false"/>
+      <xsd:element name="city" type="xsd:string" minOccurs="1" maxOccurs="1" nillable="false"/>
+      <xsd:element name="municipality" type="xsd:string" minOccurs="1" maxOccurs="1" nillable="false"/>
+      <xsd:element name="employees" type="xsd:int" minOccurs="0" maxOccurs="1" nillable="true"/>
+      <xsd:element name="scope" type="xsd:string" minOccurs="1" maxOccurs="1" nillable="false"/>
+      <xsd:element name="geom" type="gml:PointPropertyType" minOccurs="1" maxOccurs="1" nillable="false"/>
+    </xsd:sequence>
+  </xsd:extension></xsd:complexContent></xsd:complexType>
+  <xsd:element name="shops" substitutionGroup="gml:AbstractFeature" type="menorca:shopsType"/>
+</xsd:schema>

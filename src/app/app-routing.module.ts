@@ -8,6 +8,7 @@ import { EmbeddedMapComponent } from '@sections/embedded/embedded-map/embedded-m
 
 import { environment } from '../environments/environment';
 import { sitnaMapGuard } from './guards/sitna-map.guard';
+import { mapEditingDeactivateGuard, mapEditingReuseGuard } from './guards/map-editing.guard';
 import { AuthorizedLayoutComponent } from './layout/authorized-layout/authorized-layout.component';
 import { PublicLayoutComponent } from './layout/public-layout/public-layout.component';
 
@@ -52,7 +53,9 @@ const routes: Routes = [
   {
     path: 'embedded-map/:applicationId/:territoryId/:lang',
     component: EmbeddedMapComponent,
-    canActivate: [sitnaMapGuard]
+    canActivate: [mapEditingReuseGuard, sitnaMapGuard],
+    canDeactivate: [mapEditingDeactivateGuard],
+    runGuardsAndResolvers: 'paramsChange'
   },
   {
     path: '**',

@@ -1,0 +1,100 @@
+:host {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 16px;
+  color: #243447;
+  background: #f5f7fa;
+  font: 400 14px/1.5 system-ui, sans-serif;
+  container-type: inline-size;
+}
+
+:host * { box-sizing: border-box; }
+.attribute-editor { min-width: 0; }
+.attribute-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #b9d5ee;
+  border-left: 4px solid #286599;
+  border-radius: 6px;
+  background: #edf5fc;
+  overflow-wrap: anywhere;
+}
+.attribute-notice-warning { border-color: #dec783; background: #fff8e4; color: #654b08; }
+.attribute-notice-error { border-color: #d99c9c; background: #fff0f0; color: #8c2020; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend { padding: 0; margin-bottom: 4px; font-size: 17px; font-weight: 650; }
+.attribute-help { margin: 0 0 12px; color: #526275; font-size: 12px; }
+.attribute-help p { margin: 4px 0 0; }
+.attribute-field {
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #d4dce5;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(26 45 65 / 5%);
+}
+.attribute-field label { display: block; margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+.attribute-required { color: #a52c2c; }
+.attribute-inputs { display: flex; flex-wrap: wrap; gap: 8px; }
+:host input, :host select, :host textarea {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #8d9fb2;
+  border-radius: 5px;
+  background: #fff;
+  color: #172c40;
+  font: inherit;
+  line-height: 1.4;
+}
+.attribute-presence { flex: 0 1 125px; }
+.attribute-value { flex: 1 1 180px; width: 100%; }
+:host textarea { width: 100%; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
+:host textarea[readonly] { background: #edf1f5; border-color: #d0d8e1; color: #47596b; }
+:host [aria-invalid="true"] { border-color: #aa2525; background: #fff8f8; }
+:host input:focus-visible, :host select:focus-visible, :host textarea:focus-visible, :host button:focus-visible {
+  outline: 3px solid #347bb5;
+  outline-offset: 2px;
+}
+.attribute-field-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+.attribute-badge { align-self: flex-start; padding: 2px 7px; border-radius: 12px; background: #e8edf3; color: #4b5b6e; font-size: 11px; }
+.attribute-field-readonly .attribute-help { margin-bottom: 0; }
+.error { margin: 4px 0 0; color: #a32121; font-size: 12px; }
+.error:empty { display: none; }
+.attribute-actions {
+  position: sticky;
+  bottom: -16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 -16px -16px;
+  padding: 12px 16px;
+  border-top: 1px solid #d4dce5;
+  background: #fff;
+  box-shadow: 0 -3px 8px rgb(26 45 65 / 6%);
+}
+.attribute-draft-status { flex-basis: 100%; margin: 0 0 2px; color: #526275; font-size: 12px; }
+:host button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid #879bad;
+  border-radius: 5px;
+  background: #fff;
+  color: #203d56;
+  font: 600 14px/1.4 system-ui, sans-serif;
+  cursor: pointer;
+}
+:host button.attribute-apply { border-color: #205d8d; background: #205d8d; color: #fff; }
+:host button:hover:not(:disabled) { filter: brightness(.94); }
+:host button:disabled, :host fieldset:disabled { opacity: .65; }
+:host button:disabled { cursor: not-allowed; }
+@container (max-width: 300px) {
+  .attribute-presence, .attribute-value { flex-basis: 100%; width: 100%; }
+  .attribute-actions button { flex: 1 1 100%; }
+}
