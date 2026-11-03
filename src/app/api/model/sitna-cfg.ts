@@ -10,6 +10,9 @@ export interface SitnaBaseLayer {
   type?: string;
   isBase?: boolean;
   featureType?: string;
+  geometryName?: string;
+  geometryType?: string;
+  outputFormat?: string;
   minResolution?: number;
   maxResolution?: number;
   overviewMapLayer?: string;
@@ -36,6 +39,9 @@ export interface SitnaLayerOptions {
   type?: string;
   url?: string;
   featureType?: string;
+  geometryName?: string;
+  geometryType?: string;
+  outputFormat?: string;
   minResolution?: number;
   maxResolution?: number;
   opacity?: number;
@@ -87,6 +93,8 @@ export interface SitnaControls {
   WFSQuery?: boolean | SitnaControlsWFSQuery;
   workLayerManager?: boolean | SitnaControlOptions;
   controlContainer?: boolean | SitnaControlContainerOptions;
+  helloWorld?: boolean | SitnaControlOptions;
+  locator?: boolean | SitnaControlOptions;
 }
 
 export interface SitnaControlOptions {

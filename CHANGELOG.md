@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 
 - **Map**: A folder with a description, a metadata URL, or a dataset URL shows the same information button as a layer. The window shows the folder name, the description, and those links. An empty folder has no button ([#173](https://github.com/sitmun/sitmun-viewer-app/issues/173)).
+- **Map**: Adding a WFS layer passes `geometryName` to SITNA when the profile publishes one, and passes `geometryType` only when the profile publishes `preferredGeometryType`. A specific DescribeFeatureType kind is left for SITNA to read. The identify table skips a feature-information field whose format is `Geometry`. The geometry-property contract is the operator's change on top of [sitmun-admin-app#499](https://github.com/sitmun/sitmun-admin-app/issues/499).
 - **Map**: A layer with GetFeatureInfo fields shows only that include list, in order, with the translated label. `T`, `N`, `F`, `U`, `P`, and `I` format the cell in the map locale. `AUTO` keeps API-SITNA detection. `feature.data` is not rewritten. More-info reads `data-feature-path` and dotted paths such as `address.city` ([sitmun-application-stack#77](https://github.com/sitmun/sitmun-application-stack/issues/77)).
 - **Tests**: Field-list specs cover a tree-title heading and two WMS group children that share a title but use different profile layer ids.
 
@@ -21,6 +22,8 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
+- **Map**: Hello World and the locator stay off the tools panel unless the map includes that task. `enabledByDefault` keeps only `sitna.loadingIndicator`. A locator task still opens the locator, and its search parameters stay on the task ([sitmun-application-stack#140](https://github.com/sitmun/sitmun-application-stack/issues/140)).
+- **About**: The About window shows the installed API SITNA version and the installed OpenLayers version. Both values are read from the installed packages when the viewer is built ([#218](https://github.com/sitmun/sitmun-viewer-app/issues/218)).
 - **Map**: A WFS row in Loaded Layers uses the root folder as its heading, the same folder path as a WMS row, and the leaf name as its title. The toolbar overflow control shows › when the extra tools are hidden and ‹ when they are open, on every Loaded Layers row that has that control.
 - **Map**: A WFS entry in the legend lists the root folder and each intermediate folder above the layer, the same way a WMS legend does. The point swatch stays on the layer.
 - **Map**: An identify field with format Image keeps the original address and SITNA's `img.tc-img-attr`. `maxWidth` and `maxHeight` on the field set those limits. A field without them stays `width:auto;height:auto`.
