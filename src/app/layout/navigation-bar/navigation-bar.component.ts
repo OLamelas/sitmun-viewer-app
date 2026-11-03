@@ -301,8 +301,9 @@ export class NavigationBarComponent implements OnInit, DoCheck, OnDestroy {
   }
 
   changeLanguage(language: string) {
-    this.currentLang = language;
-    this.languageService.setLanguage(language).subscribe();
+    this.languageService.setLanguage(language).pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.currentLang = language;
+    });
   }
 
   isoCode(shortname: string): string {
