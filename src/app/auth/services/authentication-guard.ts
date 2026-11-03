@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import {
   ActivatedRouteSnapshot,
   Router,
@@ -8,11 +8,13 @@ import {
 
 import { AuthenticationService } from '@auth/services/authentication.service';
 import { NavigationPath } from '@config/app.config';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthenticationGuard {
+  private readonly mapFeaturePanels = inject(MapFeaturePanelService);
   constructor(
     private authenticationService: AuthenticationService<unknown>,
     private router: Router
@@ -28,8 +30,7 @@ export class AuthenticationGuard {
     const isAuthenticated = this.authenticationService.isLoggedIn();
 
     if (!isPublicUrl && !isAuthenticated) {
-      // Remove any floating MIA popups before redirecting to login
-      document.querySelectorAll('.sitmun-mia-popup-overlay').forEach((el) => el.remove());
+      this.mapFeaturePanels.destroyAll();
       // Sent to login (+ url to redirect after successfully)
       this.router
         .navigate([AUTH_CONFIG.routes.loginPath], {

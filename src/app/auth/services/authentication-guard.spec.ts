@@ -5,6 +5,7 @@ import { CustomAuthConfig, NavigationPath } from '@config/app.config';
 
 import { AuthenticationGuard } from './authentication-guard';
 import { AuthenticationService } from './authentication.service';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
 
 describe('AuthenticationGuard', () => {
   let guard: AuthenticationGuard;
@@ -44,8 +45,10 @@ describe('AuthenticationGuard', () => {
 
   it('blocks unauthenticated access to private routes and sends user to login', () => {
     isLoggedIn.mockReturnValue(false);
+    const destroy = jest.spyOn(TestBed.inject(MapFeaturePanelService), 'destroyAll');
 
     expect(activate('/user/dashboard')).toBe(false);
+    expect(destroy).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith([NavigationPath.Auth.Login], {
       queryParams: {
         [CustomAuthConfig.routes.loginQueryParam]: '/user/dashboard'

@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Inject, Injectable, signal } from '@angular/core';
+import { Inject, Injectable, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 
@@ -38,6 +38,8 @@ import { suppressAuthRedirectContext } from './auth-http-context';
 import { IndexedDbService } from './indexed-db.service';
 import { environment } from '../../../environments/environment';
 import { NotificationService } from '../../notifications/services/NotificationService';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 
 const PROXY_ERROR_THRESHOLD = 3;
 
@@ -45,6 +47,8 @@ const PROXY_ERROR_THRESHOLD = 3;
   providedIn: 'root'
 })
 export class AuthenticationService<T> {
+  private readonly mapFeaturePanels = inject(MapFeaturePanelService);
+  private readonly attributeEditing = inject(FeatureAttributeEditingService);
   // sessionStorage keys
   private readonly USERNAME_KEY: string;
 
@@ -155,6 +159,17 @@ export class AuthenticationService<T> {
     if (this.logoutInProgress) {
       return;
     }
+    if (this.attributeEditing.hasChangesAtRisk()) {
+      void this.attributeEditing.confirmMapAbandonment().then((allowed) => {
+        if (allowed) this.performExplicitLogout();
+      });
+      return;
+    }
+    this.performExplicitLogout();
+  }
+
+  private performExplicitLogout(): void {
+    if (this.logoutInProgress) return;
     this.logoutInProgress = true;
     this.clearAuthentication()
       .pipe(
@@ -372,8 +387,6 @@ export class AuthenticationService<T> {
 
   clearSessionAndRedirectToLogin(): void {
     void this.clearClientSession().then(() => {
-      // Remove any floating MIA popups that live on document.body
-      document.querySelectorAll('.sitmun-mia-popup-overlay').forEach((el) => el.remove());
       void this.router.navigateByUrl(this.config.routes.loginPath);
     });
   }
@@ -407,6 +420,7 @@ export class AuthenticationService<T> {
   }
 
   private clearClientSession(): Promise<void> {
+    this.mapFeaturePanels.destroyAll();
     sessionStorage.removeItem(this.USERNAME_KEY);
     this.stopSessionTokenRefresh();
     this.stopProxyTokenRefresh();

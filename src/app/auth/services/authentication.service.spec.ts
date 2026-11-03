@@ -23,6 +23,8 @@ import { SUPPRESS_AUTH_REDIRECT_ON_401 } from './auth-http-context';
 import { AuthenticationService } from './authentication.service';
 import { IndexedDbService } from './indexed-db.service';
 import { NotificationService } from '../../notifications/services/NotificationService';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 
 describe('AuthenticationService (FS-03)', () => {
   let service: AuthenticationService<unknown>;
@@ -99,8 +101,23 @@ describe('AuthenticationService (FS-03)', () => {
     } as unknown as MessageEvent);
   };
 
+  it('does not clear authentication on cancelled voluntary logout while map changes are at risk', fakeAsync(() => {
+    const editing = TestBed.inject(FeatureAttributeEditingService);
+    const risk = jest.spyOn(editing, 'hasChangesAtRisk').mockReturnValue(true);
+    const confirm = jest.spyOn(editing, 'confirmMapAbandonment').mockResolvedValue(false);
+    try {
+      service.logout();
+      tick();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      httpMock.expectNone(environment.apiUrl + URL_AUTH_LOGOUT);
+      expect(sessionStorage.getItem(`${CustomAuthConfig.localStoragePrefix}_username`)).toBe('tester');
+      expect(router.navigateByUrl).not.toHaveBeenCalled();
+    } finally { risk.mockRestore(); confirm.mockRestore(); }
+  }));
+
   /** BUG-050: IndexedDB cleanup must finish before login redirect. */
   it('awaits clearSession before redirecting to login', fakeAsync(() => {
+    const destroy = jest.spyOn(TestBed.inject(MapFeaturePanelService), 'destroyAll');
     let sessionCleared = false;
     indexedDbRemove.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -113,6 +130,7 @@ describe('AuthenticationService (FS-03)', () => {
 
     service.clearSessionAndRedirectToLogin();
 
+    expect(destroy).toHaveBeenCalledTimes(1);
     expect(router.navigateByUrl).not.toHaveBeenCalled();
     expect(sessionCleared).toBe(false);
 
