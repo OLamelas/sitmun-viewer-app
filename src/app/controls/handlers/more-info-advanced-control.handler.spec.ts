@@ -13,6 +13,7 @@ import {
   splitMiaLayers
 } from './more-info-advanced-control.handler';
 import { AppConfigService } from '../../services/app-config.service';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
 import {
   MiaTask,
   MoreInfoAdvancedService
@@ -105,6 +106,7 @@ describe('MoreInfoAdvancedControlHandler export dropdown', () => {
         instant: (key: string) => exportI18n[key] ?? key
       },
       renderGeneration: 0,
+      openGeneration: 0,
       renderSub: null,
       exportSub: null,
       openTimer: null,
@@ -791,19 +793,20 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
 
     handler = TestBed.inject(MoreInfoAdvancedControlHandler);
     handler.buildConfiguration({} as any, appCfg);
+    const map = document.createElement('div');
+    map.id = 'mapa';
+    document.body.appendChild(map);
   });
 
   afterEach(() => {
     handler.cleanup();
     document
-      .querySelectorAll('.sitmun-mia-popup-overlay')
+      .querySelectorAll('#mapa')
       .forEach((el) => el.remove());
   });
 
   it('passes only the plain layer to feature info and still renders the MiaTask layer', async () => {
-    const map = document.createElement('div');
-    map.id = 'mapa';
-    document.body.appendChild(map);
+    const map = document.getElementById('mapa')!;
     const original = mockTC.control.FeatureInfo.prototype.responseCallback;
     await handler.loadPatches(appCfg);
     const wrapped = mockTC.control.FeatureInfo.prototype.responseCallback;
@@ -842,7 +845,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       { id: 'mia' },
       { featureBbox: null, applicationId: 7, territoryId: 11 }
     );
-    const overlay = document.querySelector('.sitmun-mia-popup-overlay');
+    const overlay = document.querySelector('.sitmun-map-feature-panel');
     expect(overlay?.parentElement).toBe(map);
     expect((overlay as HTMLElement).style.left).toBe('');
     map.remove();
@@ -914,7 +917,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       services: [{ layers: [{ name: 'OTHER_LAYER', features: [plain] }] }]
     });
     pendingOpen?.();
-    expect(document.querySelector('.sitmun-mia-popup-overlay')).toBeNull();
+    expect(document.querySelector('.sitmun-map-feature-panel')).toBeNull();
     expect(miaService.renderMiaTasks).not.toHaveBeenCalled();
 
     wrapped.call(control, {
@@ -923,8 +926,8 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       services: [{ layers: [{ name: '34_TOPO_TX', features: [mia] }] }]
     });
     scheduled.run?.();
-    const overlay = document.querySelector('.sitmun-mia-popup-overlay');
-    expect(overlay?.classList.contains('sitmun-mia-popup-visible')).toBe(true);
+    const overlay = document.querySelector('.sitmun-map-feature-panel');
+    expect(overlay?.isConnected).toBe(true);
 
     wrapped.call(control, {
       featureCount: 1,
@@ -935,7 +938,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       control: { caller: control, currentFeature: plain }
     });
 
-    expect(overlay?.classList.contains('sitmun-mia-popup-visible')).toBe(false);
+    expect(overlay?.isConnected).toBe(false);
     expect(overlay?.querySelector('.tc-ctl-popup-content')?.innerHTML).toBe('');
     expect(miaService.renderMiaTasks).toHaveBeenCalledTimes(1);
     timeout.mockRestore();
@@ -962,8 +965,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
 
     wrapped.call({}, { featureCount: 0, coords: [8, 8] });
 
-    const overlay = document.querySelector('.sitmun-mia-popup-overlay');
-    expect(overlay?.classList.contains('sitmun-mia-popup-visible')).toBe(false);
+    expect(document.querySelector('.sitmun-map-feature-panel')).toBeNull();
     expect(miaService.renderMiaTasks).toHaveBeenCalledTimes(1);
   });
 
@@ -1005,11 +1007,11 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       ]
     });
 
-    const overlay = document.querySelector('.sitmun-mia-popup-overlay');
+    const overlay = document.querySelector('.sitmun-map-feature-panel');
     expect(
-      overlay?.querySelector('.sitmun-mia-popup-toolbar-title')?.textContent
+      overlay?.querySelector('.sitmun-map-feature-panel-title')?.textContent
     ).toBe('Advanced information');
-    const close = overlay?.querySelector('.sitmun-mia-popup-close');
+    const close = overlay?.querySelector('.sitmun-map-feature-panel-close');
     expect(close?.classList.contains('tc-ctl-popup-close')).toBe(true);
     expect(close?.getAttribute('aria-label')).toBe('Close');
     expect(close?.getAttribute('title')).toBe('Close');
@@ -1017,48 +1019,47 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
     expect(overlay?.innerHTML).toContain('Loading...');
   });
 
-  it('does not start toolbar drag from sitna-button close (keeps pointerup for close)', () => {
+  it('uses the existing sitna-button close gesture without starting toolbar drag', () => {
     const customElementsGet = jest
       .spyOn(customElements, 'get')
-      .mockImplementation((name: string) =>
-        name === 'sitna-button'
-          ? (class extends HTMLElement {} as unknown as CustomElementConstructor)
-          : undefined
-      );
+      .mockImplementation((name: string) => name === 'sitna-button'
+        ? (class extends HTMLElement {} as unknown as CustomElementConstructor)
+        : undefined);
     miaService.renderMiaTasks.mockReturnValue(new Subject());
+    try {
+      handler.openMiaFromGfiOptionsForTest({
+        services: [
+          {
+            layers: [
+              {
+                name: '34_TOPO_TX',
+                features: [{ getData: () => ({ id: 1 }) }]
+              }
+            ]
+          }
+        ]
+      });
 
-    handler.openMiaFromGfiOptionsForTest({
-      services: [
-        {
-          layers: [
-            {
-              name: '34_TOPO_TX',
-              features: [{ getData: () => ({ id: 1 }) }]
-            }
-          ]
-        }
-      ]
-    });
+      const overlay = document.querySelector('.sitmun-map-feature-panel') as HTMLElement;
+      const close = overlay?.querySelector('sitna-button.sitmun-map-feature-panel-close');
+      expect(close).toBeTruthy();
+      expect(close?.getAttribute('variant')).toBe('minimal');
 
-    const overlay = document.querySelector(
-      '.sitmun-mia-popup-overlay'
-    ) as HTMLElement;
-    const close = overlay?.querySelector('sitna-button.sitmun-mia-popup-close');
-    expect(close).toBeTruthy();
+      const setPointerCapture = jest.fn();
+      Object.defineProperty(overlay, 'setPointerCapture', {
+        value: setPointerCapture,
+        configurable: true
+      });
+      close?.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 })
+      );
+      expect(setPointerCapture).not.toHaveBeenCalled();
 
-    const setPointerCapture = jest.fn();
-    Object.defineProperty(overlay, 'setPointerCapture', {
-      value: setPointerCapture,
-      configurable: true
-    });
-    close?.dispatchEvent(
-      new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 })
-    );
-    expect(setPointerCapture).not.toHaveBeenCalled();
-
-    close?.dispatchEvent(new Event('pointerup'));
-    expect(overlay.classList.contains('sitmun-mia-popup-visible')).toBe(false);
-    customElementsGet.mockRestore();
+      close?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(overlay.isConnected).toBe(false);
+    } finally {
+      customElementsGet.mockRestore();
+    }
   });
 
   it('skips non-MIA layer ahead of MIA layer when opening from GFI options', () => {
@@ -1115,7 +1116,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
     ]);
     second$.complete();
 
-    const overlay = document.querySelector('.sitmun-mia-popup-overlay');
+    const overlay = document.querySelector('.sitmun-map-feature-panel');
     expect(overlay?.innerHTML).toContain('data-marker="fresh"');
     expect(overlay?.innerHTML).not.toContain('data-marker="stale"');
   });
@@ -1138,15 +1139,15 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
     });
 
     const overlay = document.querySelector(
-      '.sitmun-mia-popup-overlay'
+      '.sitmun-map-feature-panel'
     ) as HTMLElement;
-    expect(overlay.classList.contains('sitmun-mia-popup-visible')).toBe(true);
+    expect(overlay.isConnected).toBe(true);
 
     overlay
-      .querySelector('.sitmun-mia-popup-close')
-      ?.dispatchEvent(new Event('pointerup'));
+      .querySelector('.sitmun-map-feature-panel-close')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    expect(overlay.classList.contains('sitmun-mia-popup-visible')).toBe(false);
+    expect(overlay.isConnected).toBe(false);
 
     pending$.next([
       {
@@ -1157,7 +1158,7 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
     ]);
     pending$.complete();
 
-    expect(overlay.classList.contains('sitmun-mia-popup-visible')).toBe(false);
+    expect(overlay.isConnected).toBe(false);
     expect(overlay.innerHTML).not.toContain('data-marker="late"');
   });
 
@@ -1165,6 +1166,78 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
     const spy = jest.spyOn(handler, 'clearOverlayForMapRebuild');
     handler.onMapClear();
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['result', 'error'])('does not let a late MIA %s replace another owner', async outcome => {
+    const pending$ = new Subject<any>();
+    miaService.renderMiaTasks.mockReturnValue(pending$);
+    handler.openMiaFromGfiOptionsForTest({ services: [{ layers: [{
+      name: '34_TOPO_TX', features: [{ getData: () => ({ id: 'pending' }) }]
+    }] }] });
+    const service = TestBed.inject(MapFeaturePanelService);
+    const ref = await service.open(document.getElementById('mapa')!, {
+      owner: {}, contextKey: 'editor', title: 'Editor', closeLabel: 'Close',
+      mount: content => { content.textContent = 'independent draft'; return () => content.replaceChildren(); }
+    });
+    if (outcome === 'error') pending$.error(new Error('late'));
+    else pending$.next([{ taskId: 42, title: 'MIA', html: '<p>late</p>' }]);
+    expect(ref!.isCurrent).toBe(true);
+    expect(document.querySelector('.sitmun-map-feature-panel')?.textContent).toContain('independent draft');
+    expect(document.querySelector('.sitmun-map-feature-panel')?.textContent).not.toContain('late');
+  });
+
+  it('does not let a scheduled MIA opening replace a newly mounted owner', async () => {
+    await handler.loadPatches(appCfg);
+    jest.useFakeTimers();
+    try {
+      mockTC.control.FeatureInfo.prototype.responseCallback.call({}, {
+        services: [{ layers: [{ name: '34_TOPO_TX', features: [{ getData: () => ({ id: 'pending' }) }] }] }]
+      });
+      const service = TestBed.inject(MapFeaturePanelService);
+      const canClose = jest.fn().mockReturnValue(true);
+      const ref = await service.open(document.getElementById('mapa')!, {
+        owner: {}, contextKey: 'editor', title: 'Editor', closeLabel: 'Close', canClose,
+        mount: () => () => undefined
+      });
+      jest.runOnlyPendingTimers();
+      expect(ref!.isCurrent).toBe(true);
+      expect(canClose).not.toHaveBeenCalled();
+      expect(miaService.renderMiaTasks).not.toHaveBeenCalled();
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('does not cancel the current render when the same context is identified again', async () => {
+    await handler.loadPatches(appCfg);
+    const pending$ = new Subject<any>();
+    miaService.renderMiaTasks.mockReturnValue(pending$);
+    const options = () => ({ services: [{ layers: [{ name: '34_TOPO_TX',
+      features: [{ id: 'same', getData: () => ({ id: 'same' }) }]
+    }] }] });
+    jest.useFakeTimers();
+    try {
+      const callback = mockTC.control.FeatureInfo.prototype.responseCallback;
+      callback.call({}, options());
+      jest.runOnlyPendingTimers();
+      callback.call({}, options());
+      jest.runOnlyPendingTimers();
+      pending$.next([{ taskId: 42, title: 'MIA', html: '<p>completed once</p>' }]);
+      expect(miaService.renderMiaTasks).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('.sitmun-map-feature-panel')?.textContent).toContain('completed once');
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('authentication invalidation cancels a scheduled opening', async () => {
+    await handler.loadPatches(appCfg);
+    jest.useFakeTimers();
+    try {
+      mockTC.control.FeatureInfo.prototype.responseCallback.call({}, {
+        services: [{ layers: [{ name: '34_TOPO_TX', features: [{ getData: () => ({ id: 'pending' }) }] }] }]
+      });
+      TestBed.inject(MapFeaturePanelService).destroyAll();
+      jest.runOnlyPendingTimers();
+      expect(miaService.renderMiaTasks).not.toHaveBeenCalled();
+      expect(document.querySelector('.sitmun-map-feature-panel')).toBeNull();
+    } finally { jest.useRealTimers(); }
   });
 
   it('reloads the same feature after layer visibility changes', () => {
@@ -1208,14 +1281,14 @@ describe('MoreInfoAdvancedControlHandler GFI targeting', () => {
       ]
     });
 
-    expect(document.querySelector('.sitmun-mia-popup-overlay')).toBeTruthy();
+    expect(document.querySelector('.sitmun-map-feature-panel')).toBeTruthy();
     handler.clearOverlayForMapRebuild();
-    expect(document.querySelector('.sitmun-mia-popup-overlay')).toBeNull();
+    expect(document.querySelector('.sitmun-map-feature-panel')).toBeNull();
 
     pending$.next([
       { taskId: 42, title: 'MIA', html: '<p data-marker="orphaned">x</p>' }
     ]);
     pending$.complete();
-    expect(document.querySelector('.sitmun-mia-popup-overlay')).toBeNull();
+    expect(document.querySelector('.sitmun-map-feature-panel')).toBeNull();
   });
 });

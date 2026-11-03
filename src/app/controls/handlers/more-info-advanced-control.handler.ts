@@ -7,6 +7,8 @@ import { Subscription } from 'rxjs';
 import { take } from 'rxjs/operators';
 
 import { MAP_CONTAINER_ID } from '../../config/sitna.constants';
+import { MapFeaturePanelService, MapFeaturePanelRef, MapFeaturePanelMap } from '../../services/map-feature-panel.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 import {
   MoreInfoAdvancedService,
   MiaExportAction,
@@ -534,10 +536,14 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
 
   private readonly miaService = inject(MoreInfoAdvancedService);
   private readonly translate = inject(TranslateService);
+  private readonly panels = inject(MapFeaturePanelService);
+  private readonly attributeEditing = inject(FeatureAttributeEditingService);
   private appConfig: AppCfg | null = null;
-  private miaOverlayElement: HTMLElement | null = null;
-  private floatingZIndex = 10050;
+  private panelRef: MapFeaturePanelRef | null = null;
+  private panelMap: MapFeaturePanelMap | null = null;
+  private panelInvalidationSub: Subscription | null = null;
   private renderGeneration = 0;
+  private openGeneration = 0;
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private renderSub: Subscription | null = null;
   private exportSub: Subscription | null = null;
@@ -551,15 +557,20 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
 
   /** Abort in-flight open timer / render; bumps generation so late fills are ignored. */
   cancelMiaRender(): void {
-    if (this.openTimer != null) {
-      clearTimeout(this.openTimer);
-      this.openTimer = null;
-    }
+    this.cancelMiaOpen();
     this.renderSub?.unsubscribe();
     this.renderSub = null;
     this.exportSub?.unsubscribe();
     this.exportSub = null;
     this.renderGeneration++;
+  }
+
+  private cancelMiaOpen(): void {
+    if (this.openTimer != null) {
+      clearTimeout(this.openTimer);
+      this.openTimer = null;
+    }
+    this.openGeneration++;
   }
 
   /**
@@ -568,11 +579,16 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   clearOverlayForMapRebuild(): void {
     this.cancelMiaRender();
     this.lastGfiOptions = null;
-    this.removeMiaOverlay();
+    if (this.panelMap) this.panels.destroyOwner(this.panelMap, this);
+    this.panelRef = null;
+    this.lastOpenedFeatureKey = null;
   }
 
   onMapClear(_map?: object): void {
     this.clearOverlayForMapRebuild();
+    if (this.panelMap) this.panels.destroyMap(this.panelMap);
+    this.panelMap = null;
+    while (this.mapEventCleanups.length > 0) this.mapEventCleanups.pop()?.();
   }
 
   /**
@@ -586,19 +602,10 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   }
 
   override cleanup(): void {
-    this.clearOverlayForMapRebuild();
-    while (this.mapEventCleanups.length > 0) {
-      this.mapEventCleanups.pop()?.();
-    }
+    this.onMapClear();
+    this.panelInvalidationSub?.unsubscribe();
+    this.panelInvalidationSub = null;
     super.cleanup();
-  }
-
-  private removeMiaOverlay(): void {
-    if (this.miaOverlayElement) {
-      this.miaOverlayElement.remove();
-    }
-    this.miaOverlayElement = null;
-    this.lastOpenedFeatureKey = null;
   }
 
   override buildConfiguration(
@@ -613,33 +620,15 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   override async loadPatches(context: AppCfg): Promise<void> {
     this.appConfig = context;
     this.miaService.initialize(context);
-    await this.withTCAsync(async (TC) => {
-      const mapProto = TC?.Map?.prototype;
-      if (mapProto && !mapProto.__sitmunMiaZIndex) {
-        const bringFloatingPopupToFront = (event: PointerEvent) => {
-          const target = event.target as HTMLElement | null;
-          const popup = target?.closest?.(
-            '.sitmun-mia-popup-overlay, .tc-ctl-popup'
-          ) as HTMLElement | null;
-          if (!popup) return;
-          popup.style.zIndex = String(++this.floatingZIndex);
-        };
-        document.addEventListener(
-          'pointerdown',
-          bringFloatingPopupToFront,
-          true
-        );
-        mapProto.__sitmunMiaZIndex = true;
-        this.patchManager.add(() => {
-          document.removeEventListener(
-            'pointerdown',
-            bringFloatingPopupToFront,
-            true
-          );
-          delete mapProto.__sitmunMiaZIndex;
-        });
+    this.panelInvalidationSub ??= this.panels.invalidated$.subscribe(host => {
+      const mapHost = this.getPanelHost();
+      if (host === null || host === mapHost) {
+        this.cancelMiaRender();
+        this.lastGfiOptions = null;
+        this.lastOpenedFeatureKey = null;
       }
-
+    });
+    await this.withTCAsync(async (TC) => {
       const fiProto = TC?.control?.FeatureInfo?.prototype;
       if (fiProto?.responseCallback && !fiProto.__sitmunMiaResponseCallback) {
         const responseCallbackAdvice = meld.around(
@@ -648,6 +637,11 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
           (jp: MeldJoinPoint) => {
             const [options] = jp.args as [MiaFeatureInfoOptions];
             const control = jp.target as any;
+            if (control.map?.div) this.panelMap = control.map;
+            if (this.attributeEditing.isEditingMap(control.map)) {
+              this.hideMiaOverlay();
+              return jp.proceedApply(jp.args);
+            }
             let miaOptions: MiaFeatureInfoOptions | null = null;
             if (options?.services && this.miaService.hasMiaTasks()) {
               const split = splitMiaLayers(options, this.resolveDeps());
@@ -670,11 +664,14 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
             if (miaOptions) {
               this.lastGfiOptions = miaOptions;
               this.ensureFeatureSelectionHook(control);
-              this.cancelMiaRender();
-              const generation = this.renderGeneration;
+              this.cancelMiaOpen();
+              const generation = this.openGeneration;
+              const panelHost = this.getPanelHost();
+              const panelRevision = panelHost ? this.panels.revision(panelHost) : 0;
               this.openTimer = setTimeout(() => {
                 this.openTimer = null;
-                if (generation !== this.renderGeneration) return;
+                if (generation !== this.openGeneration) return;
+                if (panelHost && panelRevision !== this.panels.revision(panelHost)) return;
                 this.tryOpenMiaPopup(miaOptions);
               }, MIA_OPEN_DELAY_MS);
             } else if (this.miaService.hasMiaTasks()) {
@@ -699,11 +696,16 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
       return;
     }
     const map = featureInfoControl.map;
+    if (map?.div) this.panelMap = map;
     if (!map?.on) {
       return;
     }
 
     const onDisplayRender = (e: any) => {
+      if (this.attributeEditing.isEditingMap(map)) {
+        this.hideMiaOverlay();
+        return;
+      }
       const displayControl = e?.control;
       if (!displayControl) return;
 
@@ -753,10 +755,7 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
       return;
     }
 
-    const overlayVisible = !!this.miaOverlayElement?.classList.contains(
-      'sitmun-mia-popup-visible'
-    );
-    if (overlayVisible && this.lastOpenedFeatureKey === target.featureKey) {
+    if (this.panelRef?.isCurrent && this.lastOpenedFeatureKey === target.featureKey) {
       return;
     }
 
@@ -779,181 +778,61 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
     featureKey: string,
     viewerContext: MiaViewerContext | null
   ): void {
-    this.renderSub?.unsubscribe();
-    this.renderSub = null;
-
-    const overlay = this.ensureMiaOverlay();
-    if (!overlay) return;
-
-    const popupId = 'mia-popup-' + Date.now();
-    const contentDiv = overlay.querySelector(
-      '.tc-ctl-popup-content'
-    ) as HTMLElement | null;
-    if (!contentDiv) return;
-    contentDiv.innerHTML = this.buildMiasHtml(popupId, miaTasks);
-
-    overlay.style.left = '';
-    overlay.style.top = '';
-    overlay.style.right = '';
-    overlay.classList.add('sitmun-mia-popup-visible');
-    overlay.style.zIndex = String(++this.floatingZIndex);
-
-    this.wireTopLevelMiaTabs(popupId, contentDiv);
-    this.wireBackendRenderedTabs(contentDiv);
-
-    this.lastOpenedFeatureKey = featureKey;
-    const generation = this.renderGeneration;
-    const exportActions = Array.from(
-      new Map(
-        miaTasks
-          .flatMap((miaTask) =>
-            this.miaService.getExportActionsForCartography(
-              miaTask.cartographyId
-            )
-          )
-          .map((action) => [`${action.taskId}:${action.output}`, action])
-      ).values()
-    );
-
-    this.renderSub = this.miaService
-      .renderMiaTasks(miaTasks, featureData, viewerContext ?? undefined)
-      .pipe(take(1))
-      .subscribe({
-        next: (renderedTasks) => {
-          if (generation !== this.renderGeneration) return;
-          this.fillRenderedMiaTasks(contentDiv, renderedTasks, exportActions);
-        },
-        error: (error) => {
-          if (generation !== this.renderGeneration) return;
-          this.fillRenderedMiaError(
-            contentDiv,
-            error?.message || 'MIA rendering failed'
-          );
-        }
-      });
+    const host = this.getPanelHost();
+    if (!host) return;
+    this.panelMap ??= host;
+    const requestedGeneration = this.renderGeneration;
+    const gfiOptions = this.lastGfiOptions;
+    void this.panels.open(this.panelMap, {
+      owner: this,
+      contextKey: featureKey,
+      title: this.translate.instant('mia.popup.title'),
+      closeLabel: this.translate.instant('mia.popup.close'),
+      mount: (contentDiv, ref) => {
+        this.panelRef = ref;
+        this.lastGfiOptions = gfiOptions;
+        this.lastOpenedFeatureKey = featureKey;
+        const generation = this.renderGeneration;
+        const popupId = `mia-popup-${generation}`;
+        // MIA alone owns HTML, sanitization, tabs and exports, not the panel.
+        contentDiv.classList.add('tc-ctl-popup-content', 'sitmun-mia-popup-content');
+        contentDiv.innerHTML = this.buildMiasHtml(popupId, miaTasks);
+        this.wireTopLevelMiaTabs(popupId, contentDiv);
+        this.wireBackendRenderedTabs(contentDiv);
+        const exportActions = Array.from(new Map(miaTasks
+          .flatMap(task => this.miaService.getExportActionsForCartography(task.cartographyId))
+          .map(action => [`${action.taskId}:${action.output}`, action])).values());
+        this.renderSub = this.miaService
+          .renderMiaTasks(miaTasks, featureData, viewerContext ?? undefined)
+          .pipe(take(1))
+          .subscribe({
+            next: tasks => {
+              if (generation !== this.renderGeneration) return;
+              ref.update(content => this.fillRenderedMiaTasks(content, tasks, exportActions));
+            },
+            error: error => {
+              if (generation !== this.renderGeneration) return;
+              ref.update(content => this.fillRenderedMiaError(content, error?.message || 'MIA rendering failed'));
+            }
+          });
+        return () => {
+          this.cancelMiaRender();
+          this.lastGfiOptions = null;
+          this.lastOpenedFeatureKey = null;
+          if (this.panelRef === ref) this.panelRef = null;
+          contentDiv.replaceChildren();
+        };
+      },
+      // A delayed MIA intent must not replace content after its map/context expired.
+      isValid: () => requestedGeneration === this.renderGeneration
+    }).catch(error => console.error('Unable to open MIA panel', error));
   }
 
-  private ensureMiaOverlay(): HTMLElement | null {
-    if (this.miaOverlayElement && !this.miaOverlayElement.isConnected) {
-      this.miaOverlayElement = null;
-    }
-    if (this.miaOverlayElement) {
-      this.refreshMiaOverlayChrome(this.miaOverlayElement);
-      return this.miaOverlayElement;
-    }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'sitmun-mia-popup-overlay';
-    const toolbar = document.createElement('div');
-    toolbar.className = 'sitmun-mia-popup-toolbar';
-    const title = document.createElement('span');
-    title.className = 'sitmun-mia-popup-toolbar-title';
-    toolbar.appendChild(title);
-    toolbar.appendChild(this.createMiaCloseControl());
-    const content = document.createElement('div');
-    content.className = 'tc-ctl-popup-content sitmun-mia-popup-content';
-    overlay.appendChild(toolbar);
-    overlay.appendChild(content);
-    this.refreshMiaOverlayChrome(overlay);
-    this.addMiaOverlayPointerHandlers(overlay);
-
-    const host = document.getElementById(MAP_CONTAINER_ID) ?? document.body;
-    host.appendChild(overlay);
-    this.miaOverlayElement = overlay;
-
-    return overlay;
-  }
-
-  /**
-   * Match SITNA FeatureInfo popup close: sitna-button.tc-ctl-popup-close with
-   * localized title/label (api-sitna tc-ctl-popup template).
-   */
-  private createMiaCloseControl(): HTMLElement {
-    const useSitnaButton = !!customElements.get('sitna-button');
-    const close = document.createElement(
-      useSitnaButton ? 'sitna-button' : 'button'
-    ) as HTMLElement;
-    if (!useSitnaButton) {
-      (close as HTMLButtonElement).type = 'button';
-    } else {
-      close.setAttribute('variant', 'minimal');
-    }
-    close.className = 'tc-ctl-popup-close sitmun-mia-popup-close';
-    // Match SITNA Popup.js (pointerup). Avoid also binding click (would double-fire).
-    close.addEventListener('pointerup', () => {
-      this.hideMiaOverlay();
-    });
-    return close;
-  }
-
-  private refreshMiaOverlayChrome(overlay: HTMLElement): void {
-    const title = overlay.querySelector('.sitmun-mia-popup-toolbar-title');
-    if (title) {
-      title.textContent = this.translate.instant('mia.popup.title');
-    }
-    const close = overlay.querySelector('.sitmun-mia-popup-close');
-    if (close) {
-      const label = this.translate.instant('mia.popup.close');
-      close.setAttribute('title', label);
-      close.setAttribute('aria-label', label);
-      close.textContent = label;
-    }
-  }
-
-  private addMiaOverlayPointerHandlers(overlay: HTMLElement): void {
-    let dragging = false;
-    let pointerId: number | null = null;
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-
-    overlay.addEventListener('pointerdown', (event: PointerEvent) => {
-      event.stopPropagation();
-      overlay.style.zIndex = String(++this.floatingZIndex);
-
-      const target = event.target as HTMLElement | null;
-      const isDragHandle = !!target?.closest('.sitmun-mia-popup-toolbar');
-      // sitna-button is not a native <button>; excluding it avoids setPointerCapture
-      // stealing pointerup from .sitmun-mia-popup-close (SITNA close uses pointerup).
-      const isInteractive = !!target?.closest(
-        'button, a, input, select, textarea, sitna-button, .sitmun-mia-popup-close, .tc-ctl-popup-close'
-      );
-      if (!isDragHandle || isInteractive) return;
-
-      event.preventDefault();
-      dragging = true;
-      pointerId = event.pointerId;
-      startX = event.clientX;
-      startY = event.clientY;
-      startLeft = overlay.offsetLeft;
-      startTop = overlay.offsetTop;
-      overlay.style.right = 'auto';
-      overlay.setPointerCapture?.(event.pointerId);
-    });
-
-    overlay.addEventListener('pointermove', (event: PointerEvent) => {
-      event.stopPropagation();
-      if (!dragging || pointerId !== event.pointerId) return;
-      event.preventDefault();
-      const nextLeft = startLeft + event.clientX - startX;
-      const nextTop = startTop + event.clientY - startY;
-      this.placeMiaOverlayAt(nextLeft, nextTop);
-    });
-
-    const stopDrag = (event: PointerEvent) => {
-      event.stopPropagation();
-      if (pointerId === event.pointerId) {
-        dragging = false;
-        pointerId = null;
-      }
-    };
-    overlay.addEventListener('pointerup', stopDrag);
-    overlay.addEventListener('pointercancel', stopDrag);
-    overlay.addEventListener('wheel', (event) => event.stopPropagation(), {
-      passive: true
-    });
-    overlay.addEventListener('click', (event) => event.stopPropagation());
+  private getPanelHost(): HTMLElement | null {
+    if (this.panelMap instanceof HTMLElement) return this.panelMap;
+    const div = this.panelMap?.div;
+    return typeof div === 'string' ? document.getElementById(div)
+      : div ?? document.getElementById(MAP_CONTAINER_ID);
   }
 
   private buildMiaViewerContext(
@@ -1129,40 +1008,8 @@ export class MoreInfoAdvancedControlHandler extends ControlHandlerBase {
   }
   private hideMiaOverlay(): void {
     this.cancelMiaRender();
-    if (!this.miaOverlayElement) return;
-    this.miaOverlayElement.classList.remove('sitmun-mia-popup-visible');
-    const contentDiv = this.miaOverlayElement.querySelector(
-      '.tc-ctl-popup-content'
-    );
-    if (contentDiv) contentDiv.innerHTML = '';
-    this.lastOpenedFeatureKey = null;
-  }
-
-  private placeMiaOverlayAt(left: number, top: number): void {
-    if (!this.miaOverlayElement) return;
-    const rect = this.clampMiaOverlayPosition(
-      left,
-      top,
-      this.miaOverlayElement.offsetWidth || 420,
-      this.miaOverlayElement.offsetHeight || 260
-    );
-    this.miaOverlayElement.style.left = `${rect.left}px`;
-    this.miaOverlayElement.style.top = `${rect.top}px`;
-  }
-
-  private clampMiaOverlayPosition(
-    left: number,
-    top: number,
-    width: number,
-    height: number
-  ): { left: number; top: number } {
-    const margin = 12;
-    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-    const maxTop = Math.max(margin, window.innerHeight - height - margin);
-    return {
-      left: Math.min(Math.max(margin, left), maxLeft),
-      top: Math.min(Math.max(margin, top), maxTop)
-    };
+    this.lastGfiOptions = null;
+    if (this.panelRef?.isCurrent) void this.panelRef.requestClose();
   }
 
   private buildMiasHtml(popupId: string, miaTasks: MiaTask[]): string {

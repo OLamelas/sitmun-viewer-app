@@ -268,19 +268,20 @@ body {
 
 }
 
-.sitmun-mia-popup-overlay {
+.sitmun-map-feature-panel {
   background: #fff;
   border: 1px solid #999;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
-  display: none;
+  display: flex;
   flex-direction: column;
-  height: min(70vh, calc(100vh - 70px));
+  box-sizing: border-box;
+  height: 70%;
   left: auto;
-  max-height: calc(100vh - 70px);
-  max-width: min(760px, calc(100vw - 48px));
-  min-height: 280px;
-  min-width: 360px;
+  max-height: calc(100% - 24px);
+  max-width: calc(100% - 24px);
+  min-height: min(280px, calc(100% - 24px));
+  min-width: min(360px, calc(100% - 24px));
   overflow: hidden;
   pointer-events: auto;
   position: absolute !important;
@@ -288,19 +289,15 @@ body {
   right: 12px;
   top: 12px;
   user-select: text;
-  width: min(540px, calc(100vw - 48px));
+  width: min(540px, calc(100% - 24px));
   z-index: 10050;
 }
 
-.sitmun-mia-popup-overlay.sitmun-mia-popup-visible {
-  display: flex;
-}
-
-#mapa:has(.tc-tools-panel:not(.tc-collapsed-right)) .sitmun-mia-popup-overlay {
+#mapa:has(.tc-tools-panel:not(.tc-collapsed-right)) .sitmun-map-feature-panel {
   right: 432px;
 }
 
-.sitmun-mia-popup-toolbar {
+.sitmun-map-feature-panel-toolbar {
   align-items: center;
   background: #f3f3f3;
   border-bottom: 1px solid #ccc;
@@ -308,13 +305,21 @@ body {
   display: flex;
   justify-content: space-between;
   padding: 6px 8px;
+  touch-action: none;
+  user-select: none;
 }
 
-.sitmun-mia-popup-toolbar-title {
+.sitmun-map-feature-panel-title {
   font-weight: 600;
 }
 
-.sitmun-mia-popup-overlay .tc-ctl-popup-content {
+.sitmun-map-feature-panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sitmun-map-feature-panel .sitmun-mia-popup-content {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -328,7 +333,7 @@ body {
 }
 
 /* Prefer SITNA .tc-ctl-popup-close icon styling; keep a compact toolbar hit target. */
-.sitmun-mia-popup-overlay .sitmun-mia-popup-close {
+.sitmun-map-feature-panel .sitmun-map-feature-panel-close {
   cursor: pointer;
   flex: 0 0 auto;
 }
