@@ -359,6 +359,18 @@ describe('ControlRegistryService', () => {
       expect(result.scale).toBeDefined();
     });
 
+    it('disables a control whose mandatory access patch fails, without disabling consultation controls', async () => {
+      const mandatory = Object.assign(new ErrorHandler(), { failClosedOnPatchError: true });
+      service.register(mandatory);
+      service.register(new MockHandler('sitna.scale', undefined, 'tc-slot-scale', 'scale'));
+      const result = await service.processControls([
+        { 'ui-control': 'sitna.error', parameters: {} } as AppTasks,
+        { 'ui-control': 'sitna.scale', parameters: {} } as AppTasks
+      ], {} as AppCfg);
+      expect((result as Record<string, unknown>)['error']).toBe(false);
+      expect(result.scale).toBeDefined();
+    });
+
     it('should skip non-sitna controls', async () => {
       const tasks: AppTasks[] = [
         { 'ui-control': 'other.control', parameters: {} } as any

@@ -170,6 +170,9 @@ export interface AppParameters {
 
 export interface AppTasks {
   id: string;
+  type?: string;
+  scope?: string;
+  url?: string;
   parameters: any;
   'ui-control': string;
   typeId?: number;

@@ -1,4 +1,9 @@
 {
+  "wfsEditing.wmsUnverified": "This WMS layer is read-only: its configuration does not establish a verifiable authorized WFS destination.",
+  "wfsEditing.denied": "You cannot edit this layer in the current application and territory, or permission could not be verified.",
+  "wfsEditing.unavailable": "WFS editing is unavailable. Check permissions, the destination and the SITNA hooks.",
+  "wfsEditing.revoked": "Editing permission is no longer valid. Local changes are preserved; you can close the session.",
+  "wfsEditing.saveFailed": "Saving failed. Local changes are preserved and further editing is blocked until permission is checked again.",
   "application.availableTerritories": "Available territories",
   "application.back": "Back",
   "application.contact": "Point of contact email",

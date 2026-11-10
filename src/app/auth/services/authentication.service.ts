@@ -121,6 +121,7 @@ export class AuthenticationService<T> {
           this.http.get<UserDto>(environment.apiUrl + URL_API_USER_ACCOUNT)
         ),
         tap((user: UserDto) => {
+          this.mapFeaturePanels.destroyAll();
           sessionStorage.setItem(this.USERNAME_KEY, user.username);
           this.startSessionKeepAlive();
         })
@@ -240,6 +241,7 @@ export class AuthenticationService<T> {
       .get<UserDto>(environment.apiUrl + URL_API_USER_ACCOUNT)
       .pipe(
         tap((user: UserDto) => {
+          this.mapFeaturePanels.destroyAll();
           sessionStorage.setItem(this.USERNAME_KEY, user.username);
           this.startSessionKeepAlive();
         }),

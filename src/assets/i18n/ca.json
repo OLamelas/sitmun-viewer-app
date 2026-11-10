@@ -1,4 +1,9 @@
 {
+  "wfsEditing.wmsUnverified": "Aquesta capa WMS és només de consulta: la configuració no estableix un destí WFS autoritzat verificable.",
+  "wfsEditing.denied": "No teniu permís per editar aquesta capa en l’aplicació i el territori actuals, o no s’ha pogut verificar.",
+  "wfsEditing.unavailable": "L’edició WFS no està disponible. Cal comprovar els permisos, el destí i els hooks de SITNA.",
+  "wfsEditing.revoked": "El permís d’edició ja no és vàlid. Els canvis locals es conserven; podeu sortir de la sessió.",
+  "wfsEditing.saveFailed": "No s’ha pogut desar. Es conserven els canvis locals i es bloquegen noves modificacions fins a revalidar el permís.",
   "application.availableTerritories": "Territoris disponibles",
   "application.back": "Enrere",
   "application.contact": "Correu del punt de contacte",

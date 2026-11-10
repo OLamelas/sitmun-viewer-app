@@ -1,4 +1,9 @@
 {
+  "wfsEditing.wmsUnverified": "Cette couche WMS reste en consultation : sa configuration ne définit pas de destination WFS autorisée vérifiable.",
+  "wfsEditing.denied": "Vous ne pouvez pas modifier cette couche dans l’application et le territoire actuels, ou l’autorisation n’a pas pu être vérifiée.",
+  "wfsEditing.unavailable": "L’édition WFS est indisponible. Vérifiez les autorisations, la destination et les hooks SITNA.",
+  "wfsEditing.revoked": "L’autorisation d’édition n’est plus valide. Les modifications locales sont conservées ; vous pouvez fermer la session.",
+  "wfsEditing.saveFailed": "L’enregistrement a échoué. Les modifications locales sont conservées et l’édition est bloquée jusqu’à une nouvelle vérification.",
   "application.availableTerritories": "Territoires disponibles",
   "application.back": "Retour",
   "application.contact": "E-mail du point de contact",

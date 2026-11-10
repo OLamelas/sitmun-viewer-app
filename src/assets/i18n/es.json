@@ -1,4 +1,9 @@
 {
+  "wfsEditing.wmsUnverified": "Esta capa WMS es de solo consulta: la configuración no establece un destino WFS autorizado verificable.",
+  "wfsEditing.denied": "No tiene permiso para editar esta capa en la aplicación y el territorio actuales, o no se ha podido verificar.",
+  "wfsEditing.unavailable": "La edición WFS no está disponible. Revise los permisos, el destino y los hooks de SITNA.",
+  "wfsEditing.revoked": "El permiso de edición ya no es válido. Los cambios locales se conservan; puede salir de la sesión.",
+  "wfsEditing.saveFailed": "No se ha podido guardar. Los cambios locales se conservan y se bloquean nuevas modificaciones hasta revalidar el permiso.",
   "application.availableTerritories": "Territorios disponibles",
   "application.back": "Volver",
   "application.contact": "Correo del punto de contacto",

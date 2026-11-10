@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 
 import {
   URL_API_APPLICATIONS,
@@ -13,6 +13,8 @@ import { environment } from 'src/environments/environment';
 
 import { AppConfigService } from '../../services/app-config.service';
 import { LanguageService } from '../../services/language.service';
+import { MapFeaturePanelService } from '../../services/map-feature-panel.service';
+import { suppressAuthRedirectContext } from '../../auth/services/auth-http-context';
 
 export enum DashboardTypes {
   APPLICATIONS = 'applications',
@@ -111,7 +113,7 @@ interface MapConfigCacheEntry {
 @Injectable({
   providedIn: 'root'
 })
-export class CommonService {
+export class CommonService implements OnDestroy {
   // Common service is used to share some data between components
   private messageSubject: BehaviorSubject<{ theme: string }> =
     new BehaviorSubject({ theme: 'sitmun-base' });
@@ -120,6 +122,13 @@ export class CommonService {
 
   private appConfigService = inject(AppConfigService);
   private languageService = inject(LanguageService);
+  private readonly identityInvalidation = inject(MapFeaturePanelService).invalidated$.subscribe(() => {
+    this.clearMapConfigurationCache();
+  });
+
+  ngOnDestroy(): void {
+    this.identityInvalidation.unsubscribe();
+  }
 
   private mapConfigCache = new Map<string, MapConfigCacheEntry>();
   private readonly territoriesByApplicationId = new Map<
@@ -127,6 +136,14 @@ export class CommonService {
     Observable<ResponseDto>
   >();
   private readonly CONFIG_CACHE_TTL_MS = 60_000;
+  private configurationEpoch = 0;
+  private freshRevision = 0;
+
+  clearMapConfigurationCache(): void {
+    this.configurationEpoch++;
+    this.mapConfigCache.clear();
+    this.clearTerritoriesCache();
+  }
 
   constructor(private http: HttpClient) {}
 
@@ -260,7 +277,8 @@ export class CommonService {
   fetchMapConfiguration(
     appId: number,
     territoryId: number,
-    langOverride?: string
+    langOverride?: string,
+    options: { refresh?: boolean } = {}
   ): Observable<AppCfg> {
     const testConfigFile = this.appConfigService.getTestConfigFile();
     if (testConfigFile) {
@@ -272,6 +290,7 @@ export class CommonService {
     const key = `${appId}:${territoryId}:${lang}`;
     const cached = this.mapConfigCache.get(key);
     const useCache =
+      !options.refresh &&
       !langOverride &&
       cached &&
       Date.now() - cached.timestamp < this.CONFIG_CACHE_TTL_MS;
@@ -280,11 +299,15 @@ export class CommonService {
     }
 
     const url = environment.apiUrl + URL_API_MAP_CONFIG(appId, territoryId);
-    const options = lang ? { params: { lang } } : {};
+    const epoch = this.configurationEpoch;
+    const httpOptions = {
+      ...(options.refresh ? { context: suppressAuthRedirectContext() } : {}),
+      params: { ...(lang ? { lang } : {}), ...(options.refresh ? { _fresh: `${Date.now()}-${++this.freshRevision}` } : {}) }
+    };
 
-    return this.http.get<AppCfg>(url, options).pipe(
+    return this.http.get<AppCfg>(url, httpOptions).pipe(
       tap((data) => {
-        this.mapConfigCache.set(key, { data, timestamp: Date.now() });
+        if (epoch === this.configurationEpoch) this.mapConfigCache.set(key, { data, timestamp: Date.now() });
       })
     );
   }

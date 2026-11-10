@@ -1,31 +1,52 @@
-import { readFileSync } from 'fs';
-import { execFileSync } from 'child_process';
-import { join } from 'path';
 import { runInNewContext } from 'vm';
+import { createSitnaPatchSandbox } from './sitna-patch-sandbox';
 
 describe('SITNA compatibility', () => {
-  it('can run the installation scripts repeatedly without changing the patched code', () => {
-    const files = [
-      'TC/control/PrintMap.js',
-      'TC/control/Edit.js',
-      'TC/control/WFSEdit.js',
-      'TC/control/AttributesEdit.js',
-      'TC/tool/FeatureTypeParser.js',
-      'TC/ol/ol.js',
-      'workers/tc-caps-web-worker-blob.mjs'
-    ];
-    const readSources = () => files.map(file => readFileSync(join(__dirname, '../node_modules/api-sitna', file), 'utf8'));
-    const before = readSources();
-    for (let run = 0; run < 2; run++) {
-      for (const script of ['patch-printmap-logo.js', 'patch-wfs-110-parser.js', 'patch-sitna-wfs.js']) {
-        execFileSync(process.execPath, [join(__dirname, script)]);
-      }
-    }
-    expect(readSources()).toEqual(before);
+  const files = [
+    'TC/control/PrintMap.js',
+    'TC/control/Edit.js',
+    'TC/control/WFSEdit.js',
+    'TC/control/AttributesEdit.js',
+    'TC/tool/FeatureTypeParser.js',
+    'TC/ol/ol.js',
+    'workers/tc-caps-web-worker-blob.mjs'
+  ];
+  const scripts = ['patch-printmap-logo.js', 'patch-wfs-110-parser.js', 'patch-sitna-wfs.js'];
+  const sandbox = createSitnaPatchSandbox();
+  const readSources = () => files.map(file => sandbox.read(file));
+  const runInstallationScripts = () => scripts.forEach(script => sandbox.run(script));
+  let patchedSources: string[];
+
+  beforeAll(() => {
+    runInstallationScripts();
+    patchedSources = readSources();
+  });
+
+  it('can rerun the installation scripts without changing their patched sources', () => {
+    runInstallationScripts();
+    expect(readSources()).toEqual(patchedSources);
+  });
+
+  it.each(['clean', 'v1'] as const)('installs the mandatory v2 hooks from the reconstructed %s dependency', (version) => {
+    const input = createSitnaPatchSandbox();
+    input.wfsBaseline(version);
+    const before = input.read('TC/control/WFSEdit.js');
+    expect(before).not.toContain('sitmunPermissionHooksVersion = 2;');
+    expect(before).not.toContain('if (self.sitmunCanMutate?.() === false) return;');
+    if (version === 'v1') expect(before).toContain('sitmunPermissionHooksVersion = 1;');
+    else expect(before).not.toContain('sitmunPermissionHooksVersion');
+    input.run('patch-sitna-wfs.js');
+    const upgraded = input.read('TC/control/WFSEdit.js');
+    expect(upgraded).toContain('sitmunPermissionHooksVersion = 2;');
+    expect(upgraded.match(/if \(self.sitmunCanMutate\?\.\(\) === false\) return;/g)).toHaveLength(1);
+    expect(upgraded).toContain('sitmunCloseLayerTransition(mapLayer, sitmunAttemptCurrent)');
+    expect(upgraded).not.toContain('self.sitmunLayerAttemptCurrent?.(');
+    input.run('patch-sitna-wfs.js');
+    expect(input.read('TC/control/WFSEdit.js')).toBe(upgraded);
   });
 
   it.each(['1.1.0', '2.0.0'])('parses prefixed WFS %s capabilities', (version) => {
-    const source = readFileSync(join(__dirname, '../node_modules/api-sitna/workers/tc-caps-web-worker-blob.mjs'), 'utf8');
+    const source = sandbox.read('workers/tc-caps-web-worker-blob.mjs');
     const worker = source.slice(source.indexOf('String.raw`') + 'String.raw`'.length, source.lastIndexOf('`],'));
     const postMessage = jest.fn();
     const context = { postMessage, onmessage: null as ((event: unknown) => void) | null };
@@ -52,7 +73,7 @@ describe('SITNA compatibility', () => {
   });
 
   it('uses the layer title when its path is empty', () => {
-    const source = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/WFSEdit.js'), 'utf8');
+    const source = sandbox.read('TC/control/WFSEdit.js');
     const start = source.indexOf('const getLayerTitle = ') + 'const getLayerTitle = '.length;
     const end = source.indexOf('const getLegendImage', start);
     const getLayerTitle = new Function('return ' + source.slice(start, end))();
@@ -63,7 +84,7 @@ describe('SITNA compatibility', () => {
   });
 
   it('forwards geometry edits to WFSEdit without duplicating elevation changes', () => {
-    const source = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/Edit.js'), 'utf8').replace(/\r\n/g, '\n');
+    const source = sandbox.read('TC/control/Edit.js').replace(/\r\n/g, '\n');
     const geometryModifyHandler = source.slice(
       source.indexOf('self.modifyControl\n            .on(Consts.event.FEATUREMODIFY'),
       source.indexOf("const onFeaturesSelectionChange", source.indexOf('self.modifyControl\n            .on(Consts.event.FEATUREMODIFY'))
@@ -76,8 +97,8 @@ describe('SITNA compatibility', () => {
   });
 
   it('forwards geometry undo and redo and clears reverted WFS modifications', () => {
-    const editSource = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/Edit.js'), 'utf8').replace(/\r\n/g, '\n');
-    const wfsSource = readFileSync(join(__dirname, '../node_modules/api-sitna/TC/control/WFSEdit.js'), 'utf8').replace(/\r\n/g, '\n');
+    const editSource = sandbox.read('TC/control/Edit.js').replace(/\r\n/g, '\n');
+    const wfsSource = sandbox.read('TC/control/WFSEdit.js').replace(/\r\n/g, '\n');
 
     expect(editSource).toContain("self.history.addEventListener('undo'");
     expect(editSource).toContain("self.history.addEventListener('redo'");

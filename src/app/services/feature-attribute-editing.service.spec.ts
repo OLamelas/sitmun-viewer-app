@@ -814,6 +814,42 @@ describe('phase 3 form/session coordination', () => {
     expect(edit.mode).toBe('addpoint');
   });
 
+  it('composes the own permission descriptor and cannot revive a mode after deferred consent', async () => {
+    let mode = 'modify'; let allowed = true; let revision = 1;
+    const nativeSet = jest.fn((value: string) => { mode = value; });
+    const prototype = Object.create(Object.getPrototypeOf(edit));
+    Object.defineProperty(prototype, 'mode', { configurable: true, get: () => mode, set: nativeSet });
+    Object.setPrototypeOf(edit, prototype);
+    const guardedSet = jest.fn((value: string) => { if (allowed) nativeSet(value); });
+    Object.defineProperty(edit, 'mode', { configurable: true, get: () => mode, set: guardedSet });
+    edit.sitmunCaptureEditingPermission = () => {
+      const captured = revision; return () => allowed && captured === revision;
+    };
+    await open(); form().rows[0].group.controls.text.setValue('draft');
+    edit.mode = 'addpoint'; await settle();
+    allowed = false; revision++;
+    answer.next(true); await settle();
+    expect(nativeSet).not.toHaveBeenCalled(); expect(mode).toBe('modify');
+    allowed = true;
+    edit.mode = 'addpoint'; await settle();
+    expect(guardedSet).toHaveBeenCalled(); expect(nativeSet).toHaveBeenCalledTimes(1);
+    service.ngOnDestroy();
+    expect(Object.getOwnPropertyDescriptor(edit, 'mode')?.set).toBe(guardedSet);
+    allowed = false; edit.mode = 'modify'; expect(nativeSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call setLayer when a close invalidates an already pending layer consent', async () => {
+    let revision = 1;
+    const nativeSet = jest.fn(async (target: any) => { wfs.layer = target; return target; });
+    wfs.setLayer = nativeSet;
+    wfs.sitmunCaptureLayerAttempt = () => { const captured = revision; return () => captured === revision; };
+    await open(); form().rows[0].group.controls.text.setValue('draft');
+    const switching = wfs.setLayer({ ...layer, id: 'next' }); await settle();
+    expect(confirm).toHaveBeenCalled(); revision++;
+    answer.next(true); await switching;
+    expect(nativeSet).not.toHaveBeenCalled(); expect(wfs.layer).toBe(layer);
+  });
+
   it('intercepts the native layer selector before even its preliminary UI mutation', async () => {
     await open();
     form().rows[0].group.controls.text.setValue('draft');

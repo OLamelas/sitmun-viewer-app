@@ -1,4 +1,9 @@
 {
+  "wfsEditing.wmsUnverified": "Aguesta capa WMS ei sonque de consulta: era configuracion non establís ua destinacion WFS autorizada verificabla.",
+  "wfsEditing.denied": "Non auetz permís entà editar aguesta capa ena aplicacion e eth territòri actuaus, o non s’a pogut verificar.",
+  "wfsEditing.unavailable": "Era edicion WFS non ei disponibla. Cau verificar es permisi, era destinacion e es hooks de SITNA.",
+  "wfsEditing.revoked": "Eth permís d’edicion ja non ei valid. Es cambis locaus se consèrven; podetz barrar era session.",
+  "wfsEditing.saveFailed": "Non s’a pogut sauvar. Es cambis locaus se consèrven e era edicion demore blocada enquia tornar a verificar eth permís.",
   "application.availableTerritories": "Territoris disponibles",
   "application.back": "Enrere",
   "application.contact": "Corrèu eth punt de contacte",

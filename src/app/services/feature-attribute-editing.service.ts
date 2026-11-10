@@ -133,7 +133,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
         const active = interaction.getActive?.() !== false;
         interaction.setActive?.(false);
         transition.restore.push(() => {
-          if (this.sessions.get(session.map) === session) interaction.setActive?.(active);
+          if (this.sessions.get(session.map) === session && session.wfsEdit.sitmunCanMutate?.() !== false) interaction.setActive?.(active);
         });
       }
       session.view?.setInput('busy', true);
@@ -469,7 +469,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
         const active = native.getActive?.() !== false;
         native.setActive?.(false);
         transition.restore.push(() => {
-          if (this.sessions.get(session.map) === session) native.setActive?.(active);
+          if (this.sessions.get(session.map) === session && session.wfsEdit.sitmunCanMutate?.() !== false) native.setActive?.(active);
         });
       }
     }
@@ -521,7 +521,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
   }
 
   private isModifyModeWithoutInteraction(session: EditingSession): boolean {
-    return !!session.wfsEdit.layer && session.editControl?.mode === 'modify' &&
+    return session.wfsEdit.sitmunCanMutate?.() !== false && !!session.wfsEdit.layer && session.editControl?.mode === 'modify' &&
       session.map?.on3DView !== true;
   }
 
@@ -782,7 +782,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
     inputs: ReadonlyMap<string, AttributeInput>
   ): Promise<void> {
     const feature = session.currentFeature;
-    if (!feature || this.isMapTransitionPending(session.map) || session.applying || session.historyRegistrations > 0 || session.confirmation) return;
+    if (!feature || session.wfsEdit.sitmunCanMutate?.() === false || this.isMapTransitionPending(session.map) || session.applying || session.historyRegistrations > 0 || session.confirmation) return;
     const generation = session.generation;
     const view = session.view;
     view?.setInput('error', '');
@@ -844,7 +844,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
   private async retryRegistration(session: EditingSession): Promise<void> {
     const retry = session.failedRegistration;
     const feature = session.failedFeature;
-    if (!retry || !feature || this.isMapTransitionPending(session.map) || session.applying || !this.isFeatureInActiveLayer(session, feature)) return;
+    if (!retry || !feature || session.wfsEdit.sitmunCanMutate?.() === false || this.isMapTransitionPending(session.map) || session.applying || !this.isFeatureInActiveLayer(session, feature)) return;
     session.applying = true;
     const view = session.view;
     view?.setInput('busy', true);
@@ -868,7 +868,12 @@ export class FeatureAttributeEditingService implements OnDestroy {
   }
 
   private watchFormSession(session: EditingSession): void {
+    this.replaceMember(session, session.wfsEdit, 'sitmunEditingPermissionChanged', (allowed: boolean) => {
+      session.view?.setInput('permissionDenied', !allowed);
+      session.view?.changeDetectorRef.detectChanges();
+    });
     const canSave = () => {
+      if (session.wfsEdit.sitmunCanMutate?.() === false) return false;
       if (this.isMapTransitionPending(session.map)) return false;
       if (session.reconciliationFailed) {
         session.map.toast?.(this.text('featureAttribute.saveReconcileFailed'));
@@ -1086,16 +1091,17 @@ export class FeatureAttributeEditingService implements OnDestroy {
 
   private watchModeIntent(session: EditingSession): void {
     const edit = session.editControl;
+    const own = Object.getOwnPropertyDescriptor(edit, 'mode');
     let prototype = Object.getPrototypeOf(edit);
-    let descriptor: PropertyDescriptor | undefined;
+    let descriptor: PropertyDescriptor | undefined = own;
     while (prototype && !descriptor) {
       descriptor = Object.getOwnPropertyDescriptor(prototype, 'mode');
       prototype = Object.getPrototypeOf(prototype);
     }
     if (!descriptor?.get || !descriptor.set) return;
     const native = descriptor;
-    const own = Object.getOwnPropertyDescriptor(edit, 'mode');
     const setter = (mode: unknown) => {
+      const permissionCurrent = edit.sitmunCaptureEditingPermission?.();
       if (this.isMapTransitionPending(session.map)) return;
       if (!session.panelRef || mode === native.get!.call(edit)) {
         native.set!.call(edit, mode);
@@ -1112,7 +1118,7 @@ export class FeatureAttributeEditingService implements OnDestroy {
         }
       }
       void this.closePanel(session, true).then((closed) => {
-        if (closed && this.sessions.get(session.map) === session) native.set!.call(edit, mode);
+        if (closed && this.sessions.get(session.map) === session && permissionCurrent?.() !== false) native.set!.call(edit, mode);
       });
     };
     Object.defineProperty(edit, 'mode', { configurable: true, get: () => native.get!.call(edit), set: setter });
@@ -1295,9 +1301,10 @@ export class FeatureAttributeEditingService implements OnDestroy {
     const originalDescriptor = Object.getOwnPropertyDescriptor(control, 'setLayer');
     const original = control.setLayer;
     const service = this;
-    const wrapped = function (this: any, target: unknown, ...args: unknown[]): unknown {
+    const transition = function (this: any, target: unknown, ...args: unknown[]): unknown {
       if (service.isMapTransitionPending(session.map)) return Promise.resolve(session.wfsEdit.layer);
       const nextLayer = typeof target === 'string' ? session.map.getLayer?.(target) : target;
+      const permissionCurrent = target != null ? control.sitmunCaptureLayerAttempt?.(nextLayer) : undefined;
       const consent = session.sessionExitApproved;
       session.sessionExitApproved = undefined;
       if (consent && consent.layer === this.layer &&
@@ -1312,9 +1319,15 @@ export class FeatureAttributeEditingService implements OnDestroy {
         return original.call(this, target, ...args);
       }
       return service.confirmSessionExit(session).then((closed) => {
-        if (!closed) return session.wfsEdit.layer;
+        if (!closed || permissionCurrent?.() === false) return session.wfsEdit.layer;
         return original.call(this, target, ...args);
       });
+    };
+    // Permission must precede consent, not sit underneath this instance wrapper.
+    const wrapped = function (this: any, target: unknown, ...args: unknown[]): unknown {
+      const operation = () => Promise.resolve(transition.call(this, target, ...args));
+      return target != null && typeof control.sitmunWithLayerPermission === 'function'
+        ? control.sitmunWithLayerPermission(target, operation) : operation();
     };
     try {
       control.setLayer = wrapped;
@@ -1412,6 +1425,8 @@ export class FeatureAttributeEditingService implements OnDestroy {
   }
 
   private watchLayerSelectorIntent(session: EditingSession): void {
+    // The mandatory native hook owns preflight -> setLayer/consent -> open.
+    if (typeof session.wfsEdit.sitmunChangeEditingLayer === 'function') return;
     let replaying = false;
     const listener = (event: Event) => {
       const selector = event.target;

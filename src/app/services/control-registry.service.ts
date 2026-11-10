@@ -222,6 +222,9 @@ export class ControlRegistryService {
                   entry.loadPatchesMs = performance.now() - loadStart;
               })
               .catch((err: unknown) => {
+                if (handler.failClosedOnPatchError && handler.sitnaConfigKey) {
+                  (sitnaControls as any)[handler.sitnaConfigKey] = false;
+                }
                 console.error(
                   `[ControlRegistry] Failed to load patches for ${bid}:`,
                   err

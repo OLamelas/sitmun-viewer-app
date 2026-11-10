@@ -46,6 +46,8 @@ export interface ControlHandler {
    * Paths relative to assets directory.
    */
   readonly requiredPatches?: string[];
+  /** A failed mandatory patch must disable this control instead of retaining native access. */
+  readonly failClosedOnPatchError?: boolean;
 
   /**
    * Optional dependencies on other controls.

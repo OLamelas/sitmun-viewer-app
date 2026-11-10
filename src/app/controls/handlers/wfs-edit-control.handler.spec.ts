@@ -7,6 +7,8 @@ import type { AppCfg, AppTasks } from '@api/model/app-cfg';
 import { WFSEditControlHandler } from './wfs-edit-control.handler';
 import { AppConfigService } from '../../services/app-config.service';
 import { SitnaApiService } from '../../services/sitna-api.service';
+import { WfsEditingPermissionsService } from '../../services/wfs-editing-permissions.service';
+import { FeatureAttributeEditingService } from '../../services/feature-attribute-editing.service';
 
 describe('WFSEditControlHandler', () => {
   let handler: WFSEditControlHandler;
@@ -34,6 +36,8 @@ describe('WFSEditControlHandler', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         WFSEditControlHandler,
+        { provide: WfsEditingPermissionsService, useValue: { install: jest.fn(), registered: jest.fn(), clear: jest.fn(), disable: jest.fn(), reportUnavailable: jest.fn() } },
+        { provide: FeatureAttributeEditingService, useValue: { connect: jest.fn() } },
         { provide: SitnaApiService, useValue: mockSitnaApi },
         { provide: AppConfigService, useValue: mockAppConfigService }
       ]
@@ -111,7 +115,7 @@ describe('WFSEditControlHandler', () => {
       const config = handler.buildConfiguration(task, context);
 
       expect(config).toBeDefined();
-      expect(config).toEqual({});
+      expect(config).toEqual({ sitmunWfsProfile: context });
     });
 
     it('should merge task parameters', () => {
@@ -288,12 +292,47 @@ describe('WFSEditControlHandler', () => {
   });
 
   describe('Integration', () => {
+    it('installs mandatory access before native register, even if the optional panel fails', async () => {
+      const order: string[] = [];
+      const permissions = TestBed.inject(WfsEditingPermissionsService) as any;
+      permissions.install.mockImplementation(() => order.push('permission'));
+      const editing = TestBed.inject(FeatureAttributeEditingService) as any;
+      editing.connect.mockRejectedValue(new Error('optional adapter unavailable'));
+      const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      class Native {
+        options = { sitmunWfsProfile: mockAppCfg };
+        async register(_map: object) { order.push('native'); return this; }
+      }
+      mockSitnaApi.getTC.mockReturnValue({ control: { WFSEdit: Native } });
+      try {
+        await handler.loadPatches(mockAppCfg);
+        const control = new Native(); const map = {};
+        await control.register(map);
+        expect(order).toEqual(['permission', 'native']);
+        expect(permissions.install).toHaveBeenCalledWith(control, map, mockAppCfg);
+        expect(permissions.disable).not.toHaveBeenCalled();
+      } finally { handler.cleanup(); log.mockRestore(); }
+    });
+
+    it('does not register the native editor if its mandatory gate cannot install', async () => {
+      const permissions = TestBed.inject(WfsEditingPermissionsService) as any;
+      permissions.install.mockImplementation(() => { throw new Error('incompatible hooks'); });
+      const native = jest.fn();
+      class Native { register(_map: object) { native(); return Promise.resolve(this); } }
+      mockSitnaApi.getTC.mockReturnValue({ control: { WFSEdit: Native } });
+      const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await handler.loadPatches(mockAppCfg); await new Native().register({});
+        expect(native).not.toHaveBeenCalled(); expect(permissions.disable).toHaveBeenCalled();
+      } finally { handler.cleanup(); log.mockRestore(); }
+    });
     it('should handle full lifecycle', async () => {
       mockAppConfigService.getControlDefault.mockReturnValue({
         div: 'wfsedit'
       });
 
-      // Load patches (no-op for native control)
+      class Native { async register(_map: object) { return this; } }
+      mockSitnaApi.getTC.mockReturnValue({ control: { WFSEdit: Native } });
       await handler.loadPatches(mockAppCfg);
 
       // Build config
@@ -306,6 +345,7 @@ describe('WFSEditControlHandler', () => {
       const config = handler.buildConfiguration(task, context);
       expect(config).toBeDefined();
       expect(config?.['custom']).toBe('value');
+      handler.cleanup();
     });
   });
 });

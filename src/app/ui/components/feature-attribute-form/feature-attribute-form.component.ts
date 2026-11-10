@@ -51,7 +51,7 @@ interface FieldRow {
           }
         }
         <form (submit)="submit($event)" novalidate>
-          <fieldset [disabled]="busy || syncing">
+          <fieldset [disabled]="permissionDenied || busy || syncing">
             <legend>{{ 'featureAttribute.fields' | translate }}</legend>
             <p class="attribute-help">{{ 'featureAttribute.draftHelp' | translate }}</p>
             @if (rows.length === 0) { <p class="attribute-notice">{{ 'featureAttribute.empty' | translate }}</p> }
@@ -115,7 +115,7 @@ interface FieldRow {
           </fieldset>
           <div class="attribute-actions">
           <p class="attribute-draft-status" role="status">{{ (dirty ? 'featureAttribute.draftChanged' : 'featureAttribute.draftClean') | translate }}</p>
-          <button class="attribute-apply" type="submit" [disabled]="busy || syncing || !dirty">
+          <button class="attribute-apply" type="submit" [disabled]="permissionDenied || busy || syncing || !dirty">
             {{ 'featureAttribute.apply' | translate }}
           </button>
           <button type="button" [disabled]="busy || syncing" (click)="cancel.emit()">{{ 'featureAttribute.cancel' | translate }}</button>
@@ -131,6 +131,7 @@ export class FeatureAttributeFormComponent implements OnChanges, OnDestroy {
   @Input() fields: AttributeFormField[] = [];
   @Input() issues: string[] = [];
   @Input() busy = false;
+  @Input() permissionDenied = false;
   @Input() pending = false;
   @Input() syncing = false;
   @Input() error = '';
@@ -214,7 +215,7 @@ export class FeatureAttributeFormComponent implements OnChanges, OnDestroy {
 
   submit(event: Event): void {
     event.preventDefault();
-    if (this.busy || this.syncing || !this.dirty) return;
+    if (this.permissionDenied || this.busy || this.syncing || !this.dirty) return;
     const inputs = new Map<string, AttributeInput>();
     let invalid = false;
     for (const row of this.rows) {

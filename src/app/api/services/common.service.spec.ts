@@ -11,6 +11,7 @@ import { environment } from 'src/environments/environment';
 import { CommonService } from './common.service';
 import { AppConfigService } from '../../services/app-config.service';
 import { LanguageService } from '../../services/language.service';
+import { SUPPRESS_AUTH_REDIRECT_ON_401 } from '../../auth/services/auth-http-context';
 
 describe('CommonService', () => {
   let service: CommonService;
@@ -207,6 +208,21 @@ describe('CommonService', () => {
   });
 
   describe('fetchMapConfiguration cache', () => {
+    it('explicit refresh bypasses the profile cache without changing language', () => {
+      const url = environment.apiUrl + URL_API_MAP_CONFIG(5, 10);
+      service.fetchMapConfiguration(5, 10).subscribe(); httpMock.expectOne(url).flush(mockAppCfg);
+      service.fetchMapConfiguration(5, 10, undefined, { refresh: true }).subscribe();
+      const fresh = httpMock.expectOne((request) => request.url === url && request.params.has('_fresh'));
+      expect(fresh.request.context.get(SUPPRESS_AUTH_REDIRECT_ON_401)).toBe(true);
+      fresh.flush(mockAppCfg);
+    });
+
+    it('a response invalidated during identity change cannot refill the cache', () => {
+      const url = environment.apiUrl + URL_API_MAP_CONFIG(5, 10);
+      service.fetchMapConfiguration(5, 10).subscribe(); const old = httpMock.expectOne(url);
+      service.clearMapConfigurationCache(); old.flush(mockAppCfg);
+      service.fetchMapConfiguration(5, 10).subscribe(); httpMock.expectOne(url).flush(mockAppCfg);
+    });
     it('should use cache on second call within TTL', (done) => {
       const url = environment.apiUrl + URL_API_MAP_CONFIG(5, 10);
       service.fetchMapConfiguration(5, 10).subscribe((data) => {
